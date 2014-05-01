@@ -28,6 +28,7 @@
 	<path id="mt_trace.classpath">
 		<fileset dir="${libraries}">
 			<include name="ij-1.48v.jar" />
+			<include name="jama-1.0.3.jar" />
 		</fileset>
 	</path>
 	
