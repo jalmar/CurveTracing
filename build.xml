@@ -1,0 +1,120 @@
+<project name="Trace Microtubule" default="" basedir=".">
+	
+	<description>TRace Microtubule Fiji plug-in build file</description>
+	
+	<!-- user configuration -->
+	<property name="Fiji" location="/Applications/Fiji.app" />
+	<property name="FijiPluginsDir" location="${Fiji}/plugins/" />
+	<property name="FijiJarsDir" location="${Fiji}/jars/" />
+	
+	<!-- directories -->
+	<property name="source" location="source" />
+	<property name="build" location="build" />
+	<property name="distribution" location="distribution" />
+	<property name="libraries" location="libraries" />
+	<property name="releases" location="releases" />
+	
+	<!-- manifest properties -->
+	<property name="project.name" value="Trace Microtubules" />
+	<property name="vendor.name" value="Utrecht University, Netherlands" />
+	<property name="developer.name" value="Jalmar Teeuw" />
+	<property name="version" value="0.0.1" />
+	
+	<tstamp>
+		<format property="date.today" pattern="yyyy-MM-dd HH:mm:ss" />
+	</tstamp>
+	
+	<!-- java class path -->
+	<path id="mt_trace.classpath">
+		<fileset dir="${libraries}">
+			<include name="ij-1.48v.jar" />
+		</fileset>
+	</path>
+	
+	<!-- main target -->
+	<target name="main" depends="build" description="main target">
+	</target>
+	
+	<!-- build target -->
+	<target name="build" depends="compress" description="building stage">
+		<echo>Building the Trace Microtubule plug-in</echo>
+	</target>
+	
+	<!-- compress target -->
+	<target name="compress" depends="compile" description="compression stage">
+		<echo>Compressing class-files into JAR-file</echo>
+		<mkdir dir="${distribution}" />
+		<jar jarfile="${distribution}/mt_trace-${version}.jar">
+			<fileset dir="${build}" includes="**/*.class" />
+			<fileset dir="${source}" includes="plugins.config" />
+			<manifest>
+				<attribute name="Signature-Title" value="${project.name}" />
+				<attribute name="Signature-Vendor" value="${vendor.name}" />
+ 		 	 	<attribute name="Built-By" value="${developer.name}"/>
+				<attribute name="Built-Date" value="${date.today}" />
+			</manifest>
+		</jar>
+	</target>
+	
+	<!-- compile target -->
+	<target name="compile" depends="" description="compilation stage">
+		<echo>Compiling source code</echo>
+		<mkdir dir="${build}" />
+		<javac destdir="${build}" source="1.6" target="1.6" includeantruntime="false">
+			<compilerarg value="-Xlint:unchecked" />
+			<src path="${source}" />
+			<classpath refid="mt_trace.classpath" />
+		</javac>
+	</target>
+	
+	<!-- release target -->
+	<!--<target name="release" depends="main" description="release distribution">
+		<copy file="${dist}/DoM_GPU-${version}.jar" toFile="${rel}/DoM_GPU-${version}-RELEASE.jar" />
+		<copy file="${dist}/jaolho.jar" toDir="${rel}" />
+		<copy file="${lib}/jocl-0.1.9.jar" toDir="${rel}" />
+	</target>-->
+	
+	<!-- install target -->
+	<target name="install" depends="main" description="install distribution">
+		<copy file="${distribution}/mt_trace-${version}.jar" toFile="${FijiPluginsDir}/mt_trace-${version}-SNAPSHOT.jar" verbose="true" />
+	</target>
+	
+	<!-- install release target -->
+	<!--<target name="install-release" depends="release" description="install release distribution">
+		<copy file="${rel}/DoM_GPU-${version}-RELEASE.jar" toFile="${FijiPluginsDir}/DoM_GPU-${version}-RELEASE.jar" verbose="true" />
+		<copy file="${rel}/jaolho.jar" toDir="${FijiJarsDir}" verbose="true" />
+		<copy file="${rel}/jocl-0.1.9.jar" toDir="${FijiJarsDir}" verbose="true" />
+	</target>-->
+	
+	<!-- clean target -->
+	<target name="clean" depends="" description="clean build directory">
+		<echo>Cleaning build directory</echo>
+		<delete includeemptydirs="true" failonerror="false" verbose="true">
+			<fileset dir="${build}" includes="**" defaultexcludes="no" />
+		</delete>
+	</target>
+	
+	<!-- deep clean target -->
+	<!--<target name="deep-clean" depends="clean" description="clean distribution directory">
+		<echo>Cleaning distribution directory</echo>
+		<delete includeemptydirs="true" failonerror="false" verbose="true">
+			<fileset dir="${dist}" includes="**" defaultexcludes="no" />
+		</delete>
+	</target>-->
+	
+	<!-- uninstall -->
+	<target name="uninstall" depends="" description="uninstall distribution">
+		<echo>Uninstalling distribution</echo>
+		<delete includeemptydirs="true" failonerror="false" verbose="true">
+			<fileset dir="${FijiPluginsDir}" includes="mt_trace*" defaultexcludes="no" />
+		</delete>
+	</target>
+	
+	<!-- run tests -->
+	<!--<target name="run" depends="build" description="run tests">
+		<java classpath="${build}:${libraries}" classname="test.test_derivatives" fork="true">
+			<arg line="data/test_image.tif" />
+		</java>
+	</target>-->
+	
+</project>
