@@ -55,6 +55,7 @@ public class LevenbergMarquardt
 		{
 			// calculate sum of squared difference
 			double dy = y_data[p] - gaussian1D(x_data[p], parameters); // RSLV: inline Gaussian1D function?
+			// NOTE: no normalisation factor necessary because it is constant between iterations and would only add to the computational complexity of the algorithm
 			chi2 += dy * dy;
 		}
 		
