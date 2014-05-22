@@ -47,6 +47,7 @@ import filters.DerivativeOfGaussian;
 //import filters.Laplacian;
 import filters.Median;
 import filters.TopHatTransform;
+import filters.FillHoles;
 import utils.ImageArithmetic;
 import utils.Profiling;
 
@@ -62,29 +63,29 @@ public class Trace_Microtubules implements PlugIn
 	public static final double DEFAULT_SIGMA = 2.0;
 	public static final int MEDIAN_FILTER_SIZE = 3; // direct neighbourhood
 	
-	public static String DEFAULT_INTERPOLATION_METHOD_S = "Bilinear"; // None, Nearest Neighbor, Bilinear, Bicubic
+	public static final String DEFAULT_INTERPOLATION_METHOD_S = "Bilinear"; // None, Nearest Neighbor, Bilinear, Bicubic
 	public static String INTERPOLATION_METHOD_S = "Bilinear";
 	public static int INTERPOLATION_METHOD = ImageProcessor.BILINEAR; // NONE, NEAREST_NEIGHBOR, BILINEAR, BICUBIC
-	public static int DEFAULT_SAMPLE_RATE = 3;
+	public static final int DEFAULT_SAMPLE_RATE = 3;
 	public static int SAMPLE_RATE = 3; // NOTE: int for now
 	public static double SAMPLE_RATE_INV = 1.0 / (double)SAMPLE_RATE;
 	public static double SAMPLE_OFFSET = 0.0;
 	
-	public static int DEFAULT_BACKGROUND_LOWER_THRESHOLD = 0;
-	public static int DEFAULT_BACKGROUND_UPPER_THRESHOLD = 65535;
+	public static final int DEFAULT_BACKGROUND_LOWER_THRESHOLD = 0;
+	public static final int DEFAULT_BACKGROUND_UPPER_THRESHOLD = 65535;
 	public static int BACKGROUND_LOWER_THRESHOLD = 0;
 	public static int BACKGROUND_UPPER_THRESHOLD = 65535;
-	public static int DEFAULT_AMPLITUDE_LOWER_THRESHOLD = 21845; // 1/3
-	public static int DEFAULT_AMPLITUDE_UPPER_THRESHOLD = 2*65535;
+	public static final int DEFAULT_AMPLITUDE_LOWER_THRESHOLD = 21845; // 1/3
+	public static final int DEFAULT_AMPLITUDE_UPPER_THRESHOLD = 2*65535;
 	public static int AMPLITUDE_LOWER_THRESHOLD = 21845; // 1/3
 	public static int AMPLITUDE_UPPER_THRESHOLD = 2*65535;
-	public static double DEFAULT_MU_THRESHOLD = 0.707;
+	public static final double DEFAULT_MU_THRESHOLD = 0.707;
 	public static double MU_THRESHOLD = 0.707; // sqrt(2)
-	public static double DEFAULT_SIGMA_RATIO_LOWER_THRESHOLD = 0.67;
-	public static double DEFAULT_SIGMA_RATIO_UPPER_THRESHOLD = 1.50;
+	public static final double DEFAULT_SIGMA_RATIO_LOWER_THRESHOLD = 0.67;
+	public static final double DEFAULT_SIGMA_RATIO_UPPER_THRESHOLD = 1.50;
 	public static double SIGMA_RATIO_LOWER_THRESHOLD = 0.67;
 	public static double SIGMA_RATIO_UPPER_THRESHOLD = 1.50;
-	public static double DEFAULT_R_SQUARED_THRESHOLD = 0.80;
+	public static final double DEFAULT_R_SQUARED_THRESHOLD = 0.80;
 	public static double R_SQUARED_THRESHOLD = 0.80;
 	
 	public static boolean FILTER_ON_BACKGROUND = true;
@@ -93,9 +94,19 @@ public class Trace_Microtubules implements PlugIn
 	public static boolean FILTER_ON_SIGMA = true;
 	public static boolean FILTER_ON_R_SQUARED = true;
 	
-	public static boolean USE_ABSOLUTE_EIGENVALUES = false;
-	public static boolean DEBUG_MODE_ENABLED = false;
-	public static boolean SHOW_RESULTS_TABLE = false;
+	public static boolean APPLY_FILL_HOLES_ALGORITHM = true;
+	public static final int DEFAULT_VOTING_THRESHOLD = 5; // out of eight; RSLV: convert to unity?
+	public static int VOTING_THRESHOLD = DEFAULT_VOTING_THRESHOLD;
+	
+	public static final boolean DEFAULT_USE_ABSOLUTE_EIGENVALUES = false;
+	public static boolean USE_ABSOLUTE_EIGENVALUES = DEFAULT_USE_ABSOLUTE_EIGENVALUES;
+	public static final boolean DEFAULT_DEBUG_MODE_ENABLED = false;
+	public static boolean DEBUG_MODE_ENABLED = DEFAULT_DEBUG_MODE_ENABLED;
+	
+	public static final boolean DEFAULT_SHOW_VECTOR_OVERLAY = true;
+	public static boolean SHOW_VECTOR_OVERLAY = DEFAULT_SHOW_VECTOR_OVERLAY;
+	public static final boolean DEFAULT_SHOW_RESULTS_TABLE = false;
+	public static boolean SHOW_RESULTS_TABLE = DEFAULT_SHOW_RESULTS_TABLE;
 	
 	/**
 	 *
@@ -115,40 +126,46 @@ public class Trace_Microtubules implements PlugIn
 		
 		// show dialog with options
 		GenericDialog gd = new GenericDialog("Trace microtubules");
-		gd.addNumericField("PSF sigma", Prefs.get("mt_trace.psf_sigma", DEFAULT_SIGMA), 1);
-		gd.addCheckbox("Reduce noise", Prefs.get("mt_trace.reduce_noise", true));
-		gd.addCheckbox("Suppress background", Prefs.get("mt_trace.suppress_background", true));
+		gd.addNumericField("PSF_sigma", Prefs.get("mt_trace.psf_sigma", DEFAULT_SIGMA), 1);
+		gd.addCheckbox("Reduce_noise", Prefs.get("mt_trace.reduce_noise", true));
+		gd.addCheckbox("Suppress_background", Prefs.get("mt_trace.suppress_background", true));
 		
-		gd.setInsets(10, 20, 0); // seperate input parameters from debug parameters
+		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
-		gd.addNumericField("Sample rate", Prefs.get("mt_trace.sample_rate", DEFAULT_SAMPLE_RATE), 0);
+		gd.addNumericField("Sample_rate", Prefs.get("mt_trace.sample_rate", DEFAULT_SAMPLE_RATE), 0);
 		gd.addChoice("Interpolation", new String[]{"None", "Nearest Neighbor", "Bilinear", "Bicubic"}, Prefs.get("mt_trace.interpolation_method_s", DEFAULT_INTERPOLATION_METHOD_S));
 		
-		gd.setInsets(10, 20, 0); // seperate input parameters from debug parameters
+		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
-		gd.addCheckbox("Filter on background", Prefs.get("mt_trace.filter_background", true));
-		gd.addNumericField("Background lower threshold", Prefs.get("mt_trace.filter_background_lower_threshold", DEFAULT_BACKGROUND_LOWER_THRESHOLD), 0);
-		gd.addNumericField("Background upper threshold", Prefs.get("mt_trace.filter_background_threshold", DEFAULT_BACKGROUND_UPPER_THRESHOLD), 0);
+		gd.addCheckbox("Filter_on_background", Prefs.get("mt_trace.filter_background", true));
+		gd.addNumericField("Background_lower_threshold", Prefs.get("mt_trace.filter_background_lower_threshold", DEFAULT_BACKGROUND_LOWER_THRESHOLD), 0);
+		gd.addNumericField("Background_upper_threshold", Prefs.get("mt_trace.filter_background_threshold", DEFAULT_BACKGROUND_UPPER_THRESHOLD), 0);
 		
-		gd.addCheckbox("Filter on amplitude", Prefs.get("mt_trace.filter_amplitude", true));
-		gd.addNumericField("Amplitude lower threshold", Prefs.get("mt_trace.filter_amplitude_lower_threshold", DEFAULT_AMPLITUDE_LOWER_THRESHOLD), 0);
-		gd.addNumericField("Amplitude upper threshold", Prefs.get("mt_trace.filter_amplitude_upper_threshold", DEFAULT_AMPLITUDE_UPPER_THRESHOLD), 0);
+		gd.addCheckbox("Filter_on_amplitude", Prefs.get("mt_trace.filter_amplitude", true));
+		gd.addNumericField("Amplitude_lower_threshold", Prefs.get("mt_trace.filter_amplitude_lower_threshold", DEFAULT_AMPLITUDE_LOWER_THRESHOLD), 0);
+		gd.addNumericField("Amplitude_upper_threshold", Prefs.get("mt_trace.filter_amplitude_upper_threshold", DEFAULT_AMPLITUDE_UPPER_THRESHOLD), 0);
 		
-		gd.addCheckbox("Filter on mu", Prefs.get("mt_trace.filter_mu", true));
-		gd.addNumericField("Mu absolute threshold", Prefs.get("mt_trace.filter_mu_threshold", DEFAULT_MU_THRESHOLD), 3);
+		gd.addCheckbox("Filter_on_mu", Prefs.get("mt_trace.filter_mu", true));
+		gd.addNumericField("Mu_absolute_threshold", Prefs.get("mt_trace.filter_mu_threshold", DEFAULT_MU_THRESHOLD), 3);
 		
-		gd.addCheckbox("Filter on sigma", Prefs.get("mt_trace.filter_sigma", true));
-		gd.addNumericField("Sigma ratio lower threshold", Prefs.get("mt_trace.filter_sigma_lower_threshold", DEFAULT_SIGMA_RATIO_LOWER_THRESHOLD), 2);
-		gd.addNumericField("Sigma ratio upper threshold", Prefs.get("mt_trace.filter_sigma_upper_threshold", DEFAULT_SIGMA_RATIO_UPPER_THRESHOLD), 2);
+		gd.addCheckbox("Filter_on_sigma", Prefs.get("mt_trace.filter_sigma", true));
+		gd.addNumericField("Sigma_ratio_lower_threshold", Prefs.get("mt_trace.filter_sigma_lower_threshold", DEFAULT_SIGMA_RATIO_LOWER_THRESHOLD), 2);
+		gd.addNumericField("Sigma_ratio_upper_threshold", Prefs.get("mt_trace.filter_sigma_upper_threshold", DEFAULT_SIGMA_RATIO_UPPER_THRESHOLD), 2);
 		
-		gd.addCheckbox("Filter on R-squared", Prefs.get("mt_trace.filter_r_squared", true));
+		gd.addCheckbox("Filter_on_R-squared", Prefs.get("mt_trace.filter_r_squared", true));
 		gd.addNumericField("R-squared threshold", Prefs.get("mt_trace.filter_r_squared_threshold", DEFAULT_R_SQUARED_THRESHOLD), 2);
 		
-		gd.setInsets(10, 20, 0); // seperate input parameters from debug parameters
+		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
-		gd.addCheckbox("Absolute eigenvalues", Prefs.get("mt_trace.absolute_eigenvalues", false));
-		gd.addCheckbox("Debug mode", Prefs.get("mt_trace.debug_mode", false));
-		gd.addCheckbox("Show results table", Prefs.get("mt_trace.results_table", false));
+		gd.addCheckbox("Apply_hole_filling", Prefs.get("mt_trace.fill_holes", true));
+		gd.addNumericField("Voting_threshold", Prefs.get("mt_trace.fill_holes_voting_threshold", DEFAULT_VOTING_THRESHOLD), 0);
+		
+		gd.setInsets(10, 20, 0); // seperate parameter groups
+		
+		gd.addCheckbox("Use_absolute_eigenvalues", Prefs.get("mt_trace.absolute_eigenvalues", DEFAULT_USE_ABSOLUTE_EIGENVALUES));
+		gd.addCheckbox("Enable_debug_mode", Prefs.get("mt_trace.debug_mode", DEFAULT_DEBUG_MODE_ENABLED));
+		gd.addCheckbox("Show_vector_overlay", Prefs.get("mt_trace.vector_overlay", DEFAULT_SHOW_VECTOR_OVERLAY));
+		gd.addCheckbox("Show_results_table", Prefs.get("mt_trace.results_table", DEFAULT_SHOW_RESULTS_TABLE));
 		
 		gd.setOKLabel("Trace");
 		
@@ -198,8 +215,12 @@ public class Trace_Microtubules implements PlugIn
 		FILTER_ON_R_SQUARED = gd.getNextBoolean();
 		R_SQUARED_THRESHOLD = gd.getNextNumber();
 		
+		APPLY_FILL_HOLES_ALGORITHM = gd.getNextBoolean();
+		VOTING_THRESHOLD = (int)gd.getNextNumber();
+		
 		USE_ABSOLUTE_EIGENVALUES = gd.getNextBoolean();
 		DEBUG_MODE_ENABLED = gd.getNextBoolean();
+		SHOW_VECTOR_OVERLAY = gd.getNextBoolean();
 		SHOW_RESULTS_TABLE = gd.getNextBoolean();
 		
 		// store parameters in preferences
@@ -221,8 +242,11 @@ public class Trace_Microtubules implements PlugIn
 		Prefs.set("mt_trace.filter_sigma_upper_threshold", SIGMA_RATIO_UPPER_THRESHOLD);
 		Prefs.set("mt_trace.filter_r_squared", FILTER_ON_R_SQUARED);
 		Prefs.set("mt_trace.filter_r_squared_threshold", R_SQUARED_THRESHOLD);
+		Prefs.set("mt_trace.fill_holes", APPLY_FILL_HOLES_ALGORITHM);
+		Prefs.set("mt_trace.fill_holes_voting_threshold", VOTING_THRESHOLD);
 		Prefs.set("mt_trace.absolute_eigenvalues", USE_ABSOLUTE_EIGENVALUES);
 		Prefs.set("mt_trace.debug_mode", DEBUG_MODE_ENABLED);
+		Prefs.set("mt_trace.vector_overlay", SHOW_VECTOR_OVERLAY);
 		Prefs.set("mt_trace.results_table", SHOW_RESULTS_TABLE);
 		
 		// trace microtubules
@@ -670,9 +694,96 @@ public class Trace_Microtubules implements PlugIn
 		
 		// *********************************************************************
 		
+		// Step 5: additional filtering of point (determine which pixels are microtubules and which belong to the background
+		double[][] filtered_pixels = new double[original_image_width][original_image_height];
+		ImageProcessor hit_ip = new ByteProcessor(original_image_width, original_image_height);
+		ImageProcessor hit_count_ip = new ByteProcessor(original_image_width, original_image_height);
+		for(int py = 0; py < original_image_height; ++py)
+		{
+			for(int px = 0; px < original_image_width; ++px)
+			{
+				// filter on background
+				boolean filtered = false;
+				if(FILTER_ON_BACKGROUND && (fitting_results[px][py][0] < BACKGROUND_LOWER_THRESHOLD || fitting_results[px][py][0] > BACKGROUND_UPPER_THRESHOLD))
+				{
+					// probably not a valid center line pixel; skip
+					filtered = true; //continue;
+				}
+				
+				
+				// filter on amplitude
+				if(FILTER_ON_AMPLITUDE && (fitting_results[px][py][1] < AMPLITUDE_LOWER_THRESHOLD || fitting_results[px][py][1] > AMPLITUDE_UPPER_THRESHOLD))
+				{
+					// probably not a valid center line pixel; skip
+					filtered = true; //continue;
+				}
+				
+				// filter on mu
+				if(FILTER_ON_MU && Math.abs(fitting_results[px][py][2]) > MU_THRESHOLD)
+				{
+					// probably not a valid center line pixel; skip
+					filtered = true; //continue;
+				}
+				
+				// filter on sigma
+				if(FILTER_ON_SIGMA && (fitting_results[px][py][3] < SIGMA_RATIO_LOWER_THRESHOLD * sigma || fitting_results[px][py][3] > SIGMA_RATIO_UPPER_THRESHOLD * sigma))
+				{
+					// probably not a valid center line pixel; skip
+					filtered = true; //continue;
+				}
+				
+				// filter on r-squared
+				if(FILTER_ON_R_SQUARED && (Double.isNaN(r_squared_fit_results[px][py]) || Math.abs(r_squared_fit_results[px][py]) < R_SQUARED_THRESHOLD))
+				{
+					// probably not a valid center line pixel; skip
+					filtered = true; //continue;
+				}
+				
+				// set pixel in hit images
+				if(!filtered)
+				{
+					hit_ip.set(px, py, 255);
+					hit_count_ip.putPixel((int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][4]), (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][5]), hit_count_ip.getPixel((int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][4]), (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][5])) + 1); // NOTE: include mu correction
+				}
+			}
+		}
+		
+		// Step 5b: relax filtering criteria based on neighbourhood
+		// using an iterative binary voting algorithm to test for membership
+		ImageProcessor hit_filled_ip = hit_ip.duplicate();
+		if(APPLY_FILL_HOLES_ALGORITHM)
+		{
+			hit_filled_ip = FillHoles.run(hit_filled_ip, VOTING_THRESHOLD);
+		}
+		
+		// TODO: create relaxed hit count image
+		
 		// DEBUG: show intermediate images
 //		if(DEBUG_MODE_ENABLED)
 //		{
+			// show hit images
+			ImagePlus hit_imp = new ImagePlus("DEBUG: hit image", hit_ip);
+			ImagePlus hit_count_imp = new ImagePlus("DEBUG: hit count image", hit_count_ip);
+			hit_imp.resetDisplayRange();
+			hit_count_imp.resetDisplayRange();
+			hit_imp.show();
+			hit_count_imp.show();
+			
+			// show relaxed hit images
+			if(APPLY_FILL_HOLES_ALGORITHM)
+			{
+				ImagePlus hit_filled_imp = new ImagePlus("DEBUG: hit filled image", hit_filled_ip);
+				hit_filled_imp.resetDisplayRange();
+				hit_filled_imp.show();
+				// TODO: show hit count filled image
+			}
+//		}
+		
+		// *********************************************************************
+		
+		// DEBUG: show intermediate images
+		if(SHOW_VECTOR_OVERLAY)
+		{
 			// TMP: create scaled image for vector overlay
 			Profiling.tic();
 			final int SCALE_FACTOR = 1;
@@ -680,73 +791,25 @@ public class Trace_Microtubules implements PlugIn
 			ImageProcessor scaled_ip = ip_original.resize(original_image_width*SCALE_FACTOR, original_image_height*SCALE_FACTOR);//duplicate();
 			Overlay eigenvectors_overlay = new Overlay();
 			
-			// create hit images
-			ImageProcessor hit_ip = new ByteProcessor(original_image_width, original_image_height);
-			ImageProcessor hit_count_ip = new ByteProcessor(original_image_width, original_image_height);
-			
 			// create vector overlay of primary [and secondary] eigenvector on top of scaled *original* image
 			for(int py = 0; py < original_image_height; ++py)
 			{
 				for(int px = 0; px < original_image_width; ++px)
 				{
-					// filter on background
-					boolean filtered = false;
-					if(FILTER_ON_BACKGROUND && (fitting_results[px][py][0] < BACKGROUND_LOWER_THRESHOLD || fitting_results[px][py][0] > BACKGROUND_UPPER_THRESHOLD))
-					{
-						// probably not a valid center line pixel; skip
-						filtered = true; //continue;
-					}
-					
-					
-					// filter on amplitude
-					if(FILTER_ON_AMPLITUDE && (fitting_results[px][py][1] < AMPLITUDE_LOWER_THRESHOLD || fitting_results[px][py][1] > AMPLITUDE_UPPER_THRESHOLD))
-					{
-						// probably not a valid center line pixel; skip
-						filtered = true; //continue;
-					}
-					
-					// filter on mu
-					if(FILTER_ON_MU && Math.abs(fitting_results[px][py][2]) > MU_THRESHOLD)
-					{
-						// probably not a valid center line pixel; skip
-						filtered = true; //continue;
-					}
-					
-					// filter on sigma
-					if(FILTER_ON_SIGMA && (fitting_results[px][py][3] < SIGMA_RATIO_LOWER_THRESHOLD * sigma || fitting_results[px][py][3] > SIGMA_RATIO_UPPER_THRESHOLD * sigma))
-					{
-						// probably not a valid center line pixel; skip
-						filtered = true; //continue;
-					}
-					
-					// filter on r-squared
-					if(FILTER_ON_R_SQUARED && (Double.isNaN(r_squared_fit_results[px][py]) || Math.abs(r_squared_fit_results[px][py]) < R_SQUARED_THRESHOLD))
-					{
-						// probably not a valid center line pixel; skip
-						filtered = true; //continue;
-					}
-					
-					// set pixel in hit images
-					if(!filtered)
-					{
-						hit_ip.set(px, py, 255);
-						hit_count_ip.putPixel((int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][4]), (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][5]), hit_count_ip.getPixel((int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][4]), (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][5])) + 1); // NOTE: include mu correction
-					}
+					// check filter status of pixel
+					boolean filtered = (hit_filled_ip.get(px, py) == 0); // RSLV: probability; e.g 0.5 for pixels picked up by the hole filling algorithm?
 					
 					// DEBUG: overlay vector on scaled image
 					double cx = px*SCALE_FACTOR+0.5*SCALE_FACTOR;
 					double cy = py*SCALE_FACTOR+0.5*SCALE_FACTOR;
 					
-					/**/
 					Roi largest_eigenvector_roi = new Line(cx-0.4*SCALE_FACTOR*results_step_3[px][py][2], cy-0.4*SCALE_FACTOR*results_step_3[px][py][3], cx+0.4*SCALE_FACTOR*results_step_3[px][py][2], cy+0.4*SCALE_FACTOR*results_step_3[px][py][3]);
 					
 					largest_eigenvector_roi.setStrokeColor(filtered ? Color.DARK_GRAY : Color.YELLOW);
 					largest_eigenvector_roi.setStrokeWidth(0.0);
 					largest_eigenvector_roi.setPosition(0); // RSLV: only applicable to single frame image
 					eigenvectors_overlay.add(largest_eigenvector_roi);
-					/**/
 					
-					/**/
 					if(!filtered)
 					{
 						Roi largest_eigenvector_corrected_roi = new Line(cx-0.4*SCALE_FACTOR*results_step_3[px][py][2]+fitting_results[px][py][2]*results_step_3[px][py][4], cy-0.4*SCALE_FACTOR*results_step_3[px][py][3]+fitting_results[px][py][2]*results_step_3[px][py][5], cx+0.4*SCALE_FACTOR*results_step_3[px][py][2]+fitting_results[px][py][2]*results_step_3[px][py][4], cy+0.4*SCALE_FACTOR*results_step_3[px][py][3]+fitting_results[px][py][2]*results_step_3[px][py][5]);
@@ -756,7 +819,6 @@ public class Trace_Microtubules implements PlugIn
 						largest_eigenvector_corrected_roi.setPosition(0); // RSLV: only applicable to single frame image
 						eigenvectors_overlay.add(largest_eigenvector_corrected_roi);
 					}
-					/**/
 					
 					/*Roi smallest_eigenvector_roi = new Line(cx-1.0*results_step_3[px][py][4], cy-1.0*results_step_3[px][py][5], cx+1.0*results_step_3[px][py][4], cy+1.0*results_step_3[px][py][5]);
 					
@@ -767,13 +829,6 @@ public class Trace_Microtubules implements PlugIn
 				}
 			}
 			
-			// show hit images
-			ImagePlus hit_imp = new ImagePlus("DEBUG: hit image", hit_ip);
-			ImagePlus hit_count_imp = new ImagePlus("DEBUG: hit count image", hit_count_ip);
-			hit_imp.resetDisplayRange();
-			hit_count_imp.resetDisplayRange();
-			hit_imp.show();
-			hit_count_imp.show();
 			
 			// TEMP: outside debug
 			// show scaled image with eigenvectors overlay
@@ -998,6 +1053,8 @@ public class Trace_Microtubules implements PlugIn
 						double[] gaussian_ys = new double[data_points];
 						double min_value = Double.MAX_VALUE; // keep track of minimum value
 						double max_value = Double.MIN_VALUE; // keep track of maximum value
+						double first_order_moment = 0.0;
+						double second_order_moment = 0.0;
 						double[] fit_param = fitting_results_tmp[current_x][current_y];
 						double ii = -line_profile_width;
 						for(int i = 0; i < data_points; ++i)
@@ -1020,8 +1077,28 @@ public class Trace_Microtubules implements PlugIn
 							min_value = Math.min(min_value, gv);
 							max_value = Math.max(max_value, gv);
 							
+							first_order_moment += pv;
+							second_order_moment += pv*pv;
+							
 							// increment ii
 							ii += SAMPLE_RATE_INV;
+						}
+						
+						double mean_value = first_order_moment / data_points;
+						double variance_value = (second_order_moment / data_points) - (mean_value * mean_value);
+						
+						double chi_square = 0.0;
+						double chi_square_variance = 0.0;
+						double chi_square_sum_square = 0.0;
+						double chi_square_expected = 0.0;
+						for(int i = 0; i < data_points; ++i)
+						{
+							double dy = profile_ys[i] - gaussian_ys[i];
+							dy = dy * dy;
+							chi_square += dy;
+							chi_square_variance += dy / variance_value;
+							chi_square_sum_square += dy / second_order_moment;
+							chi_square_expected += dy / gaussian_ys[i];
 						}
 						
 						// add fit and profile data to plot
@@ -1035,7 +1112,7 @@ public class Trace_Microtubules implements PlugIn
 						profile_plot.setColor(Color.RED);
 						profile_plot.addLabel(0.02, 0.05, " o   Line profile");
 						profile_plot.setColor(Color.BLUE);
-						profile_plot.addLabel(0.02, 0.08, "---  Gaussian fit\n       bg  = " + String.format("%.2f", fit_param[0]) + "\n       amp = " + String.format("%.2f", fit_param[1]) + "\n       mu  = " + String.format("%.4f", fit_param[2]) + "\n       sig = " + String.format("%.4f", fit_param[3]) + "\n       chi = " + String.format("%.1f", chi_squared_fit_results_tmp[current_x][current_y]) + "\n       log = " + String.format("%.5f", Math.log(chi_squared_fit_results_tmp[current_x][current_y])) + "\n       R^2 = " + String.format("%.4f", r_squared_fit_results_tmp[current_x][current_y]) + "\n\n       ecc = " + String.format("%.2f", Math.sqrt((hessian_results_tmp[current_x][current_y][1]*hessian_results_tmp[current_x][current_y][1]) - (hessian_results_tmp[current_x][current_y][0]*hessian_results_tmp[current_x][current_y][0]))));
+						profile_plot.addLabel(0.02, 0.08, "---  Gaussian fit\n       bg  = " + String.format("%.2f", fit_param[0]) + "\n       amp = " + String.format("%.2f", fit_param[1]) + "\n       mu  = " + String.format("%.4f", fit_param[2]) + "\n       sig = " + String.format("%.4f", fit_param[3]) + "\n       chi = " + String.format("%.1f", chi_squared_fit_results_tmp[current_x][current_y]) + "\n       log = " + String.format("%.5f", Math.log(chi_squared_fit_results_tmp[current_x][current_y])) + "\n       R^2 = " + String.format("%.4f", r_squared_fit_results_tmp[current_x][current_y]) + "\n\n       ecc = " + String.format("%.2f", Math.sqrt((hessian_results_tmp[current_x][current_y][1]*hessian_results_tmp[current_x][current_y][1]) - (hessian_results_tmp[current_x][current_y][0]*hessian_results_tmp[current_x][current_y][0]))) + "\n       mean = " + String.format("%.4f", mean_value) + "\n       var = " + String.format("%.4f", variance_value)+ "\n       lvar = " + String.format("%.4f", Math.log(variance_value)) + "\n       chi = " + String.format("%.1f", chi_square)+ "\n       chi_log = " + String.format("%.4f", Math.log(chi_square)) + "\n       chi_var = " + String.format("%.4f", chi_square_variance)+ "\n       chi_sum = " + String.format("%.4f", chi_square_sum_square) + "\n       chi_exp = " + String.format("%.4f", chi_square_expected));
 						
 						// create new plot window or draw in existing plot window
 						if(plot_wnd != null && !plot_wnd.isClosed())
@@ -1053,15 +1130,12 @@ public class Trace_Microtubules implements PlugIn
 			});
 			
 			Profiling.toc("DEBUG: drawing eigenvector overlay on scaled image");
-//		}
+		}
 		
 		// *********************************************************************
 		
 		// ---------------------------------------------------------------------
 		
-		// Step 5: additional filtering of point (determine which pixels are microtubules and which belong to the background
-		// Requires fitting data
-		// 
 		
 		
 		// Future steps: trace individual lines
@@ -1117,7 +1191,13 @@ public class Trace_Microtubules implements PlugIn
 					
 					// goodness of line profile fit
 					raw_data_table.addValue("chi^2", chi_squared_fit_results[px][py]); // chi^2
-					raw_data_table.addValue("chi^2", r_squared_fit_results[px][py]); // R^2
+					raw_data_table.addValue("R^2", r_squared_fit_results[px][py]); // R^2
+					
+					// filter status
+					raw_data_table.addValue("hit", hit_ip.get(px, py)); // hit
+					raw_data_table.addValue("hit_count", hit_count_ip.get(px, py)); // hit count
+					raw_data_table.addValue("hit_filled", hit_filled_ip.get(px, py)); // hit filled
+					//raw_data_table.addValue("hit_filled_count", hit_filled_count_ip.get(px, py)); // TODO: add hit filled count
 				}
 			}
 			
