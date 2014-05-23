@@ -48,6 +48,7 @@ import filters.DerivativeOfGaussian;
 import filters.Median;
 import filters.TopHatTransform;
 import filters.FillHoles;
+import filters.ConnectedComponents;
 import utils.ImageArithmetic;
 import utils.Profiling;
 
@@ -97,6 +98,10 @@ public class Trace_Microtubules implements PlugIn
 	public static boolean APPLY_FILL_HOLES_ALGORITHM = true;
 	public static final int DEFAULT_VOTING_THRESHOLD = 5; // out of eight; RSLV: convert to unity?
 	public static int VOTING_THRESHOLD = DEFAULT_VOTING_THRESHOLD;
+	
+	public static boolean FILTER_ON_COMPONENT_MIN_AREA_SIZE = true;
+	public static final int DEFAULT_COMPONENT_MIN_AREA_SIZE_THRESHOLD = 4;
+	public static int COMPONENT_MIN_AREA_SIZE_THRESHOLD = DEFAULT_COMPONENT_MIN_AREA_SIZE_THRESHOLD;
 	
 	public static final boolean DEFAULT_USE_ABSOLUTE_EIGENVALUES = false;
 	public static boolean USE_ABSOLUTE_EIGENVALUES = DEFAULT_USE_ABSOLUTE_EIGENVALUES;
@@ -153,12 +158,15 @@ public class Trace_Microtubules implements PlugIn
 		gd.addNumericField("Sigma_ratio_upper_threshold", Prefs.get("mt_trace.filter_sigma_upper_threshold", DEFAULT_SIGMA_RATIO_UPPER_THRESHOLD), 2);
 		
 		gd.addCheckbox("Filter_on_R-squared", Prefs.get("mt_trace.filter_r_squared", true));
-		gd.addNumericField("R-squared threshold", Prefs.get("mt_trace.filter_r_squared_threshold", DEFAULT_R_SQUARED_THRESHOLD), 2);
+		gd.addNumericField("R-squared_threshold", Prefs.get("mt_trace.filter_r_squared_threshold", DEFAULT_R_SQUARED_THRESHOLD), 2);
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
 		gd.addCheckbox("Apply_hole_filling", Prefs.get("mt_trace.fill_holes", true));
 		gd.addNumericField("Voting_threshold", Prefs.get("mt_trace.fill_holes_voting_threshold", DEFAULT_VOTING_THRESHOLD), 0);
+		
+		gd.addCheckbox("Filter_on_component_min_area_size", Prefs.get("mt_trace.filter_component_min_area_size", true));
+		gd.addNumericField("Component_min_area_size_threshold", Prefs.get("mt_trace.filter_component_min_area_size_threshold", DEFAULT_COMPONENT_MIN_AREA_SIZE_THRESHOLD), 0);
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
@@ -218,6 +226,9 @@ public class Trace_Microtubules implements PlugIn
 		APPLY_FILL_HOLES_ALGORITHM = gd.getNextBoolean();
 		VOTING_THRESHOLD = (int)gd.getNextNumber();
 		
+		FILTER_ON_COMPONENT_MIN_AREA_SIZE = gd.getNextBoolean();
+		COMPONENT_MIN_AREA_SIZE_THRESHOLD = (int)gd.getNextNumber();
+		
 		USE_ABSOLUTE_EIGENVALUES = gd.getNextBoolean();
 		DEBUG_MODE_ENABLED = gd.getNextBoolean();
 		SHOW_VECTOR_OVERLAY = gd.getNextBoolean();
@@ -244,6 +255,8 @@ public class Trace_Microtubules implements PlugIn
 		Prefs.set("mt_trace.filter_r_squared_threshold", R_SQUARED_THRESHOLD);
 		Prefs.set("mt_trace.fill_holes", APPLY_FILL_HOLES_ALGORITHM);
 		Prefs.set("mt_trace.fill_holes_voting_threshold", VOTING_THRESHOLD);
+		Prefs.set("mt_trace.filter_component_min_area_size", FILTER_ON_COMPONENT_MIN_AREA_SIZE);
+		Prefs.set("mt_trace.filter_component_min_area_size_threshold", COMPONENT_MIN_AREA_SIZE_THRESHOLD);
 		Prefs.set("mt_trace.absolute_eigenvalues", USE_ABSOLUTE_EIGENVALUES);
 		Prefs.set("mt_trace.debug_mode", DEBUG_MODE_ENABLED);
 		Prefs.set("mt_trace.vector_overlay", SHOW_VECTOR_OVERLAY);
@@ -751,12 +764,46 @@ public class Trace_Microtubules implements PlugIn
 		// Step 5b: relax filtering criteria based on neighbourhood
 		// using an iterative binary voting algorithm to test for membership
 		ImageProcessor hit_filled_ip = hit_ip.duplicate();
+		ImageProcessor hit_filled_count_ip = hit_count_ip.duplicate();
 		if(APPLY_FILL_HOLES_ALGORITHM)
 		{
+			// run fill holes algorithm
 			hit_filled_ip = FillHoles.run(hit_filled_ip, VOTING_THRESHOLD);
+			
+			// create relaxed hit count image; RSLV: find a way to avoid second pass?
+			hit_filled_count_ip = new ByteProcessor(original_image_width, original_image_height); // clear image (fill with zeros)
+			for(int py = 0; py < original_image_height; ++py)
+			{
+				for(int px = 0; px < original_image_width; ++px)
+				{
+					if(hit_filled_ip.get(px, py) > 0)
+					{
+						hit_filled_count_ip.putPixel((int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][4]), (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][5]), hit_filled_count_ip.getPixel((int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][4]), (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][5])) + 1); // NOTE: include mu correction
+					}
+				}
+			}
 		}
 		
-		// TODO: create relaxed hit count image
+		// Step 5c: filter components on minimum area size
+		ImageProcessor hit_filled_filtered_ip = hit_filled_ip.duplicate();
+		ImageProcessor hit_filled_filtered_count_ip = hit_filled_count_ip.duplicate();
+		if(FILTER_ON_COMPONENT_MIN_AREA_SIZE)
+		{
+			hit_filled_filtered_ip = ConnectedComponents.run(hit_filled_filtered_ip, ConnectedComponents.Connectivity.EIGHT_CONNECTIVITY, COMPONENT_MIN_AREA_SIZE_THRESHOLD, Integer.MAX_VALUE);
+			
+			// create relaxed hit count image; RSLV: find a way to avoid second pass!!
+			hit_filled_filtered_count_ip = new ByteProcessor(original_image_width, original_image_height); // clear image (fill with zeros)
+			for(int py = 0; py < original_image_height; ++py)
+			{
+				for(int px = 0; px < original_image_width; ++px)
+				{
+					if(hit_filled_filtered_ip.get(px, py) > 0)
+					{
+						hit_filled_filtered_count_ip.putPixel((int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][4]), (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][5]), hit_filled_filtered_count_ip.getPixel((int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][4]), (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][5])) + 1); // NOTE: include mu correction
+					}
+				}
+			}
+		}
 		
 		// DEBUG: show intermediate images
 //		if(DEBUG_MODE_ENABLED)
@@ -773,9 +820,22 @@ public class Trace_Microtubules implements PlugIn
 			if(APPLY_FILL_HOLES_ALGORITHM)
 			{
 				ImagePlus hit_filled_imp = new ImagePlus("DEBUG: hit filled image", hit_filled_ip);
+				ImagePlus hit_filled_count_imp = new ImagePlus("DEBUG: hit filled count image", hit_filled_count_ip);
 				hit_filled_imp.resetDisplayRange();
+				hit_filled_count_imp.resetDisplayRange();
 				hit_filled_imp.show();
-				// TODO: show hit count filled image
+				hit_filled_count_imp.show();
+			}
+			
+			// show hit images filtered on minimum component size
+			if(FILTER_ON_COMPONENT_MIN_AREA_SIZE)
+			{
+				ImagePlus hit_filled_filtered_imp = new ImagePlus("DEBUG: hit filled filtered image", hit_filled_filtered_ip);
+				//ImagePlus hit_filled_filtered_count_imp = new ImagePlus("DEBUG: hit filled filtered count image", hit_filled_filtered_count_ip);
+				hit_filled_filtered_imp.resetDisplayRange();
+				//hit_filled_filtered_count_imp.resetDisplayRange();
+				hit_filled_filtered_imp.show();
+				//hit_filled_filtered_count_imp.show();
 			}
 //		}
 		
@@ -797,7 +857,7 @@ public class Trace_Microtubules implements PlugIn
 				for(int px = 0; px < original_image_width; ++px)
 				{
 					// check filter status of pixel
-					boolean filtered = (hit_filled_ip.get(px, py) == 0); // RSLV: probability; e.g 0.5 for pixels picked up by the hole filling algorithm?
+					boolean filtered = (hit_filled_filtered_ip.get(px, py) == 0); // RSLV: probability; e.g 0.5 for pixels picked up by the hole filling algorithm?
 					
 					// DEBUG: overlay vector on scaled image
 					double cx = px*SCALE_FACTOR+0.5*SCALE_FACTOR;
@@ -1197,7 +1257,7 @@ public class Trace_Microtubules implements PlugIn
 					raw_data_table.addValue("hit", hit_ip.get(px, py)); // hit
 					raw_data_table.addValue("hit_count", hit_count_ip.get(px, py)); // hit count
 					raw_data_table.addValue("hit_filled", hit_filled_ip.get(px, py)); // hit filled
-					//raw_data_table.addValue("hit_filled_count", hit_filled_count_ip.get(px, py)); // TODO: add hit filled count
+					raw_data_table.addValue("hit_filled_count", hit_filled_count_ip.get(px, py)); // hit filled count
 				}
 			}
 			
