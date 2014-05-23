@@ -22,10 +22,10 @@ public class ConnectedComponents
 	public static final int BACKGROUND = 0; // NOTE: best if kept 0
 	public static final int FOREGROUND = 255;
 	
-	public static final int DEFAULT_FILTER_MIN_AREA_SIZE = 1;
-	//public static final int DEFAULT_FILTER_MAX_AREA_SIZE = Integer.MAX_VALUE;
+	public static final int DEFAULT_COMPONENT_MIN_AREA_SIZE_THRESHOLD = 1;
+	public static final int DEFAULT_COMPONENT_MAX_AREA_SIZE_THRESHOLD = Integer.MAX_VALUE;
 	
-	public static enum Connectivity { FOUR_CONNECTIVITY, EIGHT_CONNECTIVITY }; // RSLV: add constructor to allow FOUR_CONNECTIVITY[4], EIGHT_CONNECTIVITY[8]
+	public static enum Connectivity { FOUR_CONNECTIVITY, EIGHT_CONNECTIVITY }; // RSLV: add constructor to allow FOUR_CONNECTIVITY[4], EIGHT_CONNECTIVITY[8]; OR drop enum and use integer {4, 8}
 	public static final Connectivity DEFAULT_CONNECTIVITY = Connectivity.EIGHT_CONNECTIVITY;
 	
 	public static final LUT cc_lut = getConnectedComponentLUT();
@@ -76,8 +76,8 @@ public class ConnectedComponents
 		// first pass: classify each pixel
 		int label = 0;
 		ImageProcessor labels_ip = new ShortProcessor(img_width, img_height);
-		ResultsTable rt = ResultsTable.getResultsTable();
-		rt.reset(); // clear table
+//		ResultsTable rt = ResultsTable.getResultsTable();
+//		rt.reset(); // clear table
 		for(int py = 0; py < img_height; ++py)
 		{
 			for(int px = 0; px < img_width; ++px)
@@ -98,16 +98,19 @@ public class ConnectedComponents
 						relabelRegion(ip_dup, px, py, FOREGROUND, BACKGROUND, connectivity); // remove component from duplicate input
 						relabelRegion(labels_ip, px, py, label--, BACKGROUND, connectivity);
 					}
-					else
-					{
-						// add area to ResultsTable
-						rt.incrementCounter();
-						rt.addValue("Label", label);
-						rt.addValue("Area", area);
-					}
+//					else
+//					{
+//						// add area to ResultsTable
+//						rt.incrementCounter();
+//						rt.addValue("Label", label);
+//						rt.addValue("Area", area);
+//					}
 				}
 			}
 		}
+		
+//		// show results table
+//		rt.show("Results");
 		
 		// return labeled image
 		labels_ip.setLut(cc_lut);
