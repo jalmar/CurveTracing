@@ -113,6 +113,9 @@ public class Trace_Microtubules implements PlugIn
 	public static final boolean DEFAULT_SHOW_RESULTS_TABLE = false;
 	public static boolean SHOW_RESULTS_TABLE = DEFAULT_SHOW_RESULTS_TABLE;
 	
+	public static final int LMA_NUM_ITERATIONS = 10;
+	public static final double LMA_DEFAULT_LAMBDA = 0.001;
+	
 	/**
 	 *
 	 */
@@ -354,7 +357,6 @@ public class Trace_Microtubules implements PlugIn
 		if(suppress_background)
 		{
 			Profiling.tic();
-			
 			IJ.showStatus("Removing background noise");
 			ImageProcessor ip_wth = TopHatTransform.run(ip_step_1, (sigma+1)*DEFAULT_SIGMA);
 			ip_step_2 = ImageArithmetic.subtract(ip_step_1, ip_wth);
@@ -377,10 +379,11 @@ public class Trace_Microtubules implements PlugIn
 		
 		// ---------------------------------------------------------------------
 		
-		// Step 3: eigenvalue/vector decomposition of Hessian matrix
+		// Step 3a: eigenvalue/vector decomposition of Hessian matrix
 		
 		// calculate derivatives of gaussian from image
 		Profiling.tic();
+		IJ.showStatus("Calculating derivative of gaussian");
 		ImageProcessor dx = DerivativeOfGaussian.derivativeX(ip_step_2, sigma);
 		ImageProcessor dy = DerivativeOfGaussian.derivativeY(ip_step_2, sigma);
 		ImageProcessor dxdx = DerivativeOfGaussian.derivativeXX(ip_step_2, sigma);
@@ -388,6 +391,8 @@ public class Trace_Microtubules implements PlugIn
 		ImageProcessor dydx = dxdy;//DerivativeOfGaussian.derivativeYX(ip_step_2, sigma);
 		ImageProcessor dydy = DerivativeOfGaussian.derivativeYY(ip_step_2, sigma);
 		Profiling.toc("Step 3a: Calculating image derivatives");
+		
+		// Step 3b: calculate line points from eigenvalues and eigenvectors based on Hessian matrix
 		
 		// store results [x][y][lambda1=0|lambda2=1|V1x=2|V1y=3|V2x=4|V2y=5]
 		double[][][] results_step_3 = new double[original_image_width][original_image_height][6];
@@ -402,8 +407,8 @@ public class Trace_Microtubules implements PlugIn
 		ImageProcessor smallest_theta_ip = new FloatProcessor(original_image_width, original_image_height);
 		ImageProcessor largest_theta_ip = new FloatProcessor(original_image_width, original_image_height);
 		
-		// calculate line points from eigenvalues and eigenvectors based on Hessian matrix
 		Profiling.tic();
+		IJ.showStatus("Calculating eigenvalues and eigenvectors based on Hessian matrix");
 		for(int py = 0; py < original_image_height; ++py)
 		{
 			for(int px = 0; px < original_image_width; ++px)
@@ -561,6 +566,8 @@ public class Trace_Microtubules implements PlugIn
 		
 		// Step 4: perform line profile fitting to data
 		Profiling.tic();
+		IJ.showStatus("Fitting Gaussian line profiles to pixels");
+		
 		//ImageProcessor fitting_ip = ip_original;
 		//if(FIT_ON_RAW_IMAGE) // TODO: implement choice
 		double[][][] fitting_results = new double[original_image_width][original_image_height][4]; // [x][y][bg=0|amp=1|mu=2|sigma=3]
@@ -620,7 +627,7 @@ public class Trace_Microtubules implements PlugIn
 				LevenbergMarquardt lma = new LevenbergMarquardt();
 				
 				// run LMA fitting procedure
-				double[] fitted_parameters = lma.run(x_data, y_data, data_points, initial_parameters, 10, 0.001);
+				double[] fitted_parameters = lma.run(x_data, y_data, data_points, initial_parameters, LMA_NUM_ITERATIONS, LMA_DEFAULT_LAMBDA);
 				double[] standard_errors = lma.calculateStandardErrors(x_data, y_data, data_points, fitted_parameters);
 				double chi_squared = lma.calculateChi2(x_data, y_data, data_points, fitted_parameters);
 				
@@ -640,7 +647,7 @@ public class Trace_Microtubules implements PlugIn
 				r_squared_fit_results[px][py] = r_squared;
 			}
 		}
-		Profiling.toc("Step 3c: Fitting line profiles");
+		Profiling.toc("Step 4: Fitting line profiles");
 		
 		// DEBUG: show intermediate images
 		if(DEBUG_MODE_ENABLED)
@@ -707,7 +714,10 @@ public class Trace_Microtubules implements PlugIn
 		
 		// *********************************************************************
 		
-		// Step 5: additional filtering of point (determine which pixels are microtubules and which belong to the background
+		// Step 5a: additional filtering of point (determine which pixels are microtubules and which belong to the background
+		Profiling.tic();
+		IJ.showStatus("Filter line points");
+		
 		double[][] filtered_pixels = new double[original_image_width][original_image_height];
 		ImageProcessor hit_ip = new ByteProcessor(original_image_width, original_image_height);
 		ImageProcessor hit_count_ip = new ByteProcessor(original_image_width, original_image_height);
@@ -760,6 +770,7 @@ public class Trace_Microtubules implements PlugIn
 				}
 			}
 		}
+		Profiling.toc("Step 5a: Filtering line points");
 		
 		// Step 5b: relax filtering criteria based on neighbourhood
 		// using an iterative binary voting algorithm to test for membership
@@ -767,6 +778,9 @@ public class Trace_Microtubules implements PlugIn
 		ImageProcessor hit_filled_count_ip = hit_count_ip.duplicate();
 		if(APPLY_FILL_HOLES_ALGORITHM)
 		{
+			Profiling.tic();
+			IJ.showStatus("Filling holes between line points");
+		
 			// run fill holes algorithm
 			hit_filled_ip = FillHoles.run(hit_filled_ip, VOTING_THRESHOLD);
 			
@@ -783,12 +797,16 @@ public class Trace_Microtubules implements PlugIn
 				}
 			}
 		}
+		Profiling.toc("Step 5b: Filling holes between line points");
 		
 		// Step 5c: filter components on minimum area size
 		ImageProcessor hit_filled_filtered_ip = hit_filled_ip.duplicate();
 		ImageProcessor hit_filled_filtered_count_ip = hit_filled_count_ip.duplicate();
 		if(FILTER_ON_COMPONENT_MIN_AREA_SIZE)
 		{
+			Profiling.tic();
+			IJ.showStatus("Filtering on minimum component size");
+		
 			hit_filled_filtered_ip = ConnectedComponents.run(hit_filled_filtered_ip, ConnectedComponents.Connectivity.EIGHT_CONNECTIVITY, COMPONENT_MIN_AREA_SIZE_THRESHOLD, Integer.MAX_VALUE);
 			
 			// create relaxed hit count image; RSLV: find a way to avoid second pass!!
@@ -803,6 +821,7 @@ public class Trace_Microtubules implements PlugIn
 					}
 				}
 			}
+			Profiling.toc("Step 5c: Filtering on minimum component size");
 		}
 		
 		// DEBUG: show intermediate images
@@ -831,11 +850,11 @@ public class Trace_Microtubules implements PlugIn
 			if(FILTER_ON_COMPONENT_MIN_AREA_SIZE)
 			{
 				ImagePlus hit_filled_filtered_imp = new ImagePlus("DEBUG: hit filled filtered image", hit_filled_filtered_ip);
-				//ImagePlus hit_filled_filtered_count_imp = new ImagePlus("DEBUG: hit filled filtered count image", hit_filled_filtered_count_ip);
+				ImagePlus hit_filled_filtered_count_imp = new ImagePlus("DEBUG: hit filled filtered count image", hit_filled_filtered_count_ip);
 				hit_filled_filtered_imp.resetDisplayRange();
-				//hit_filled_filtered_count_imp.resetDisplayRange();
+				hit_filled_filtered_count_imp.resetDisplayRange();
 				hit_filled_filtered_imp.show();
-				//hit_filled_filtered_count_imp.show();
+				hit_filled_filtered_count_imp.show();
 			}
 //		}
 		
