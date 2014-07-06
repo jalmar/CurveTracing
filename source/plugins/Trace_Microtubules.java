@@ -64,6 +64,9 @@ public class Trace_Microtubules implements PlugIn
 	public static final double DEFAULT_SIGMA = 2.0;
 	public static final int MEDIAN_FILTER_SIZE = 3; // direct neighbourhood
 	
+	//public static final String[] INTERPOLATION_METHODS = new String[]{"None", "Nearest Neighbor", "Bilinear", "Bicubic"};
+	
+	//public static final int DEFALT_INTERPOLATION_METHOD_I = 2;
 	public static final String DEFAULT_INTERPOLATION_METHOD_S = "Bilinear"; // None, Nearest Neighbor, Bilinear, Bicubic
 	public static String INTERPOLATION_METHOD_S = "Bilinear";
 	public static int INTERPOLATION_METHOD = ImageProcessor.BILINEAR; // NONE, NEAREST_NEIGHBOR, BILINEAR, BICUBIC
@@ -103,6 +106,8 @@ public class Trace_Microtubules implements PlugIn
 	public static final int DEFAULT_COMPONENT_MIN_AREA_SIZE_THRESHOLD = 4;
 	public static int COMPONENT_MIN_AREA_SIZE_THRESHOLD = DEFAULT_COMPONENT_MIN_AREA_SIZE_THRESHOLD;
 	
+	public static final boolean DEFAULT_USE_WEINGARTEN_MATRIX = false;
+	public static boolean USE_WEINGARTEN_MATRIX = DEFAULT_USE_WEINGARTEN_MATRIX;
 	public static final boolean DEFAULT_USE_ABSOLUTE_EIGENVALUES = false;
 	public static boolean USE_ABSOLUTE_EIGENVALUES = DEFAULT_USE_ABSOLUTE_EIGENVALUES;
 	public static final boolean DEFAULT_DEBUG_MODE_ENABLED = false;
@@ -173,6 +178,7 @@ public class Trace_Microtubules implements PlugIn
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
+		gd.addCheckbox("Use_Weingarten_matrix", Prefs.get("mt_trace.weingarten_matrix", DEFAULT_USE_WEINGARTEN_MATRIX));
 		gd.addCheckbox("Use_absolute_eigenvalues", Prefs.get("mt_trace.absolute_eigenvalues", DEFAULT_USE_ABSOLUTE_EIGENVALUES));
 		gd.addCheckbox("Enable_debug_mode", Prefs.get("mt_trace.debug_mode", DEFAULT_DEBUG_MODE_ENABLED));
 		gd.addCheckbox("Show_vector_overlay", Prefs.get("mt_trace.vector_overlay", DEFAULT_SHOW_VECTOR_OVERLAY));
@@ -232,6 +238,7 @@ public class Trace_Microtubules implements PlugIn
 		FILTER_ON_COMPONENT_MIN_AREA_SIZE = gd.getNextBoolean();
 		COMPONENT_MIN_AREA_SIZE_THRESHOLD = (int)gd.getNextNumber();
 		
+		USE_WEINGARTEN_MATRIX = gd.getNextBoolean();
 		USE_ABSOLUTE_EIGENVALUES = gd.getNextBoolean();
 		DEBUG_MODE_ENABLED = gd.getNextBoolean();
 		SHOW_VECTOR_OVERLAY = gd.getNextBoolean();
@@ -260,6 +267,7 @@ public class Trace_Microtubules implements PlugIn
 		Prefs.set("mt_trace.fill_holes_voting_threshold", VOTING_THRESHOLD);
 		Prefs.set("mt_trace.filter_component_min_area_size", FILTER_ON_COMPONENT_MIN_AREA_SIZE);
 		Prefs.set("mt_trace.filter_component_min_area_size_threshold", COMPONENT_MIN_AREA_SIZE_THRESHOLD);
+		Prefs.set("mt_trace.weingarten_matrix", USE_WEINGARTEN_MATRIX);
 		Prefs.set("mt_trace.absolute_eigenvalues", USE_ABSOLUTE_EIGENVALUES);
 		Prefs.set("mt_trace.debug_mode", DEBUG_MODE_ENABLED);
 		Prefs.set("mt_trace.vector_overlay", SHOW_VECTOR_OVERLAY);
@@ -413,16 +421,42 @@ public class Trace_Microtubules implements PlugIn
 		{
 			for(int px = 0; px < original_image_width; ++px)
 			{
-				// construct Hessian matrix in Jama
-				Matrix h = new Matrix(2, 2, 0); // 2x2 matrix with zeros
-				h.set(0, 0, dxdx.getf(px, py));
-				h.set(0, 1, dxdy.getf(px, py));
-				h.set(1, 0, dydx.getf(px, py));
-				h.set(1, 1, dydy.getf(px, py));
-				//System.err.println("Cond="+h.cond());
+				Matrix m = null; // NOTE: beware of null-pointer exceptions!
+				if(USE_WEINGARTEN_MATRIX)
+				{
+					double dx_squared = dx.getf(px, py) * dx.getf(px, py);
+					double dy_squared = dy.getf(px, py) * dy.getf(px, py);
+					double dx_times_dy = dx.getf(px, py) * dy.getf(px, py);
+					double dy_times_dx = dx_times_dy; // dy.getf(px, py) * dx.getf(px, py);
+					
+					Matrix f1 = new Matrix(2, 2, 0); // 2x2 RC matrix with zeros
+					f1.set(0, 0, 1 + dx_squared);
+					f1.set(0, 1, dx_times_dy);
+					f1.set(1, 0, dy_times_dx);
+					f1.set(1, 1, 1 + dy_squared);
+					
+					Matrix f2 = new Matrix(2, 2, 0); // 2x2 RC matrix with zeros
+					f2.set(0, 0, dxdx.getf(px, py));
+					f2.set(0, 1, dxdy.getf(px, py));
+					f2.set(1, 0, dydx.getf(px, py));
+					f2.set(1, 1, dydy.getf(px, py));
+					
+					m = f2.times(f1.inverse());
+					m.timesEquals(-1 / Math.sqrt(1 + dx_squared + dy_squared)); // inplace scalar multiplication: same as m = m.times(-1 / Math.sqrt(1 + dx_squared + dy_squared));
+				}
+				else
+				{
+					// use Hessian matrix
+					m = new Matrix(2, 2, 0); // 2x2 RC matrix with zeros
+					m.set(0, 0, dxdx.getf(px, py));
+					m.set(0, 1, dxdy.getf(px, py));
+					m.set(1, 0, dydx.getf(px, py));
+					m.set(1, 1, dydy.getf(px, py));
+					//System.err.println("Cond="+h.cond());
+				}
 				
 				// compute eigenvalues and eigenvectors
-				EigenvalueDecomposition evd = h.eig();
+				EigenvalueDecomposition evd = m.eig();
 				Matrix d = evd.getD();
 				Matrix v = evd.getV();
 				
@@ -1215,8 +1249,6 @@ public class Trace_Microtubules implements PlugIn
 		
 		// ---------------------------------------------------------------------
 		
-		
-		
 		// Future steps: trace individual lines
 		
 		// Display table with results
@@ -1236,9 +1268,10 @@ public class Trace_Microtubules implements PlugIn
 					// new row of results
 					raw_data_table.incrementCounter();
 					
-					// pixel coordinate
+					// pixel coordinate and intensity value
 					raw_data_table.addValue("px", px);
 					raw_data_table.addValue("py", py);
+					raw_data_table.addValue("pv", ip_original.get(px, py));
 					
 					// gradients
 					raw_data_table.addValue("dx", dx.getf(px, py));
@@ -1269,14 +1302,16 @@ public class Trace_Microtubules implements PlugIn
 					raw_data_table.addValue("SE_sig", standard_error_fit_results[px][py][3]); // sigma
 					
 					// goodness of line profile fit
-					raw_data_table.addValue("chi^2", chi_squared_fit_results[px][py]); // chi^2
-					raw_data_table.addValue("R^2", r_squared_fit_results[px][py]); // R^2
+					raw_data_table.addValue("chi2", chi_squared_fit_results[px][py]); // chi^2
+					raw_data_table.addValue("R2", r_squared_fit_results[px][py]); // R^2
 					
 					// filter status
 					raw_data_table.addValue("hit", hit_ip.get(px, py)); // hit
 					raw_data_table.addValue("hit_count", hit_count_ip.get(px, py)); // hit count
 					raw_data_table.addValue("hit_filled", hit_filled_ip.get(px, py)); // hit filled
 					raw_data_table.addValue("hit_filled_count", hit_filled_count_ip.get(px, py)); // hit filled count
+					raw_data_table.addValue("hit_filled_filtered", hit_filled_filtered_ip.get(px, py)); // hit filled filtered
+					raw_data_table.addValue("hit_filled_filtered_count", hit_filled_filtered_count_ip.get(px, py)); // hit filled filtered count
 				}
 			}
 			
