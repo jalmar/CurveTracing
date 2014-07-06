@@ -61,7 +61,7 @@
 	<target name="compile" depends="" description="compilation stage">
 		<echo>Compiling source code</echo>
 		<mkdir dir="${build}" />
-		<javac destdir="${build}" source="1.6" target="1.6" includeantruntime="false">
+		<javac destdir="${build}" source="1.6" target="1.6" includeantruntime="false" debug="true" debuglevel="lines,vars,source">
 			<compilerarg value="-Xlint:unchecked" />
 			<src path="${source}" />
 			<classpath refid="mt_trace.classpath" />
