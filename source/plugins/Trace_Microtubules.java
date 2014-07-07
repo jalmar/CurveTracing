@@ -62,18 +62,31 @@ public class Trace_Microtubules implements PlugIn
 	 *	Constants
 	 */
 	public static final double DEFAULT_SIGMA = 2.0;
-	public static final int MEDIAN_FILTER_SIZE = 3; // direct neighbourhood
+	public static final double DEFAULT_SIGMA_RANGE = 0.0;
+	public static final int DEFAULT_SIGMA_STEPS = 1;
+	
+	public static double SIGMA = DEFAULT_SIGMA;
+	public static double SIGMA_RANGE = DEFAULT_SIGMA_RANGE;
+	public static double SIGMA_STEPS = DEFAULT_SIGMA_STEPS;
+	
+	public static final boolean DEFAULT_REDUCE_NOISE = true;
+	public static final int DEFAULT_MEDIAN_FILTER_SIZE = 3; // direct neighbourhood for shot noise filtering
+	public static final boolean DEFAULT_SUPPRESS_BACKGROUND = true;
+	
+	public static boolean REDUCE_NOISE = DEFAULT_REDUCE_NOISE;
+	public static int MEDIAN_FILTER_SIZE = DEFAULT_MEDIAN_FILTER_SIZE;
+	public static boolean SUPPRESS_BACKGROUND = DEFAULT_SUPPRESS_BACKGROUND;
+	
+	public static final int DEFAULT_SAMPLE_RATE = 3;
+	public static int SAMPLE_RATE = 3; // NOTE: int for now
+	public static double SAMPLE_RATE_INV = 1.0 / (double)SAMPLE_RATE;
+	public static double SAMPLE_OFFSET = 0.0; // RSLV: no half pex offset?
 	
 	//public static final String[] INTERPOLATION_METHODS = new String[]{"None", "Nearest Neighbor", "Bilinear", "Bicubic"};
-	
 	//public static final int DEFALT_INTERPOLATION_METHOD_I = 2;
 	public static final String DEFAULT_INTERPOLATION_METHOD_S = "Bilinear"; // None, Nearest Neighbor, Bilinear, Bicubic
 	public static String INTERPOLATION_METHOD_S = "Bilinear";
 	public static int INTERPOLATION_METHOD = ImageProcessor.BILINEAR; // NONE, NEAREST_NEIGHBOR, BILINEAR, BICUBIC
-	public static final int DEFAULT_SAMPLE_RATE = 3;
-	public static int SAMPLE_RATE = 3; // NOTE: int for now
-	public static double SAMPLE_RATE_INV = 1.0 / (double)SAMPLE_RATE;
-	public static double SAMPLE_OFFSET = 0.0;
 	
 	public static final int DEFAULT_BACKGROUND_LOWER_THRESHOLD = 0;
 	public static final int DEFAULT_BACKGROUND_UPPER_THRESHOLD = 65535;
@@ -106,10 +119,19 @@ public class Trace_Microtubules implements PlugIn
 	public static final int DEFAULT_COMPONENT_MIN_AREA_SIZE_THRESHOLD = 4;
 	public static int COMPONENT_MIN_AREA_SIZE_THRESHOLD = DEFAULT_COMPONENT_MIN_AREA_SIZE_THRESHOLD;
 	
+	public enum Mode { ABS_MAX, MAX, ABS_MIN, MIN };
+	public static final String[] MODES_S = new String[]{"Abs. max", "Max", "Abs. min", "Min"};
+	
+	public static final Mode DEFAULT_MODE = Mode.MIN;
+	public static final int DEFAULT_MODE_I = 3;
+	public static final String DEFAULT_MODE_S = MODES_S[DEFAULT_MODE_I];
+	
+	public static Mode MODE = DEFAULT_MODE;
+	public static int MODE_I = DEFAULT_MODE_I;
+	public static String MODE_S = DEFAULT_MODE_S;
+	
 	public static final boolean DEFAULT_USE_WEINGARTEN_MATRIX = false;
 	public static boolean USE_WEINGARTEN_MATRIX = DEFAULT_USE_WEINGARTEN_MATRIX;
-	public static final boolean DEFAULT_USE_ABSOLUTE_EIGENVALUES = false;
-	public static boolean USE_ABSOLUTE_EIGENVALUES = DEFAULT_USE_ABSOLUTE_EIGENVALUES;
 	public static final boolean DEFAULT_DEBUG_MODE_ENABLED = false;
 	public static boolean DEBUG_MODE_ENABLED = DEFAULT_DEBUG_MODE_ENABLED;
 	
@@ -139,9 +161,14 @@ public class Trace_Microtubules implements PlugIn
 		
 		// show dialog with options
 		GenericDialog gd = new GenericDialog("Trace microtubules");
-		gd.addNumericField("PSF_sigma", Prefs.get("mt_trace.psf_sigma", DEFAULT_SIGMA), 1);
-		gd.addCheckbox("Reduce_noise", Prefs.get("mt_trace.reduce_noise", true));
-		gd.addCheckbox("Suppress_background", Prefs.get("mt_trace.suppress_background", true));
+		gd.addNumericField("PSF_sigma", Prefs.get("mt_trace.psf_sigma", DEFAULT_SIGMA), 2);
+		gd.addNumericField("PSF_sigma_range", Prefs.get("mt_trace.psf_sigma_range", DEFAULT_SIGMA_RANGE), 2);
+		gd.addNumericField("PSF_sigma_steps", Prefs.get("mt_trace.psf_sigma_steps", DEFAULT_SIGMA_STEPS), 0);
+		
+		gd.setInsets(10, 20, 0); // seperate parameter groups
+		
+		gd.addCheckbox("Reduce_noise", Prefs.get("mt_trace.reduce_noise", DEFAULT_REDUCE_NOISE));
+		gd.addCheckbox("Suppress_background", Prefs.get("mt_trace.suppress_background", DEFAULT_SUPPRESS_BACKGROUND));
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
@@ -178,8 +205,8 @@ public class Trace_Microtubules implements PlugIn
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
+		gd.addChoice("Mode", MODES_S, Prefs.get("mt_trace.mode_s", DEFAULT_MODE_S));
 		gd.addCheckbox("Use_Weingarten_matrix", Prefs.get("mt_trace.weingarten_matrix", DEFAULT_USE_WEINGARTEN_MATRIX));
-		gd.addCheckbox("Use_absolute_eigenvalues", Prefs.get("mt_trace.absolute_eigenvalues", DEFAULT_USE_ABSOLUTE_EIGENVALUES));
 		gd.addCheckbox("Enable_debug_mode", Prefs.get("mt_trace.debug_mode", DEFAULT_DEBUG_MODE_ENABLED));
 		gd.addCheckbox("Show_vector_overlay", Prefs.get("mt_trace.vector_overlay", DEFAULT_SHOW_VECTOR_OVERLAY));
 		gd.addCheckbox("Show_results_table", Prefs.get("mt_trace.results_table", DEFAULT_SHOW_RESULTS_TABLE));
@@ -190,9 +217,12 @@ public class Trace_Microtubules implements PlugIn
 		if(gd.wasCanceled()) return;
 		
 		// retrieve parameters
-		double sigma = gd.getNextNumber();
-		boolean reduce_noise = gd.getNextBoolean();
-		boolean suppress_background = gd.getNextBoolean();
+		SIGMA = gd.getNextNumber();
+		SIGMA_RANGE = gd.getNextNumber();
+		SIGMA_STEPS = (int)gd.getNextNumber();
+		
+		REDUCE_NOISE = gd.getNextBoolean();
+		SUPPRESS_BACKGROUND = gd.getNextBoolean();
 		
 		SAMPLE_RATE = (int)gd.getNextNumber();
 		SAMPLE_RATE_INV = 1.0 / SAMPLE_RATE;
@@ -238,16 +268,21 @@ public class Trace_Microtubules implements PlugIn
 		FILTER_ON_COMPONENT_MIN_AREA_SIZE = gd.getNextBoolean();
 		COMPONENT_MIN_AREA_SIZE_THRESHOLD = (int)gd.getNextNumber();
 		
+		MODE_I = gd.getNextChoiceIndex();
+		MODE_S = MODES_S[MODE_I];
+		MODE = Mode.values()[MODE_I];
+		
 		USE_WEINGARTEN_MATRIX = gd.getNextBoolean();
-		USE_ABSOLUTE_EIGENVALUES = gd.getNextBoolean();
 		DEBUG_MODE_ENABLED = gd.getNextBoolean();
 		SHOW_VECTOR_OVERLAY = gd.getNextBoolean();
 		SHOW_RESULTS_TABLE = gd.getNextBoolean();
 		
 		// store parameters in preferences
-		Prefs.set("mt_trace.psf_sigma", sigma);
-		Prefs.set("mt_trace.reduce_noise", reduce_noise);
-		Prefs.set("mt_trace.suppress_background", suppress_background);
+		Prefs.set("mt_trace.psf_sigma", SIGMA);
+		Prefs.set("mt_trace.psf_sigma_range", SIGMA_RANGE);
+		Prefs.set("mt_trace.psf_sigma_steps", SIGMA_STEPS);
+		Prefs.set("mt_trace.reduce_noise", REDUCE_NOISE);
+		Prefs.set("mt_trace.suppress_background", SUPPRESS_BACKGROUND);
 		Prefs.set("mt_trace.sample_rate", SAMPLE_RATE);
 		Prefs.set("mt_trace.interpolation_method_s", INTERPOLATION_METHOD_S);
 		Prefs.set("mt_trace.filter_background", FILTER_ON_BACKGROUND);
@@ -268,13 +303,13 @@ public class Trace_Microtubules implements PlugIn
 		Prefs.set("mt_trace.filter_component_min_area_size", FILTER_ON_COMPONENT_MIN_AREA_SIZE);
 		Prefs.set("mt_trace.filter_component_min_area_size_threshold", COMPONENT_MIN_AREA_SIZE_THRESHOLD);
 		Prefs.set("mt_trace.weingarten_matrix", USE_WEINGARTEN_MATRIX);
-		Prefs.set("mt_trace.absolute_eigenvalues", USE_ABSOLUTE_EIGENVALUES);
+		Prefs.set("mt_trace.mode_s", MODE_S);
 		Prefs.set("mt_trace.debug_mode", DEBUG_MODE_ENABLED);
 		Prefs.set("mt_trace.vector_overlay", SHOW_VECTOR_OVERLAY);
 		Prefs.set("mt_trace.results_table", SHOW_RESULTS_TABLE);
 		
 		// trace microtubules
-		run(imp, sigma, reduce_noise, suppress_background);
+		run(imp, SIGMA, REDUCE_NOISE, SUPPRESS_BACKGROUND);
 		/*ImagePlus result = run(imp, sigma, reduce_noise, suppress_background);
 		
 		// show result
@@ -327,13 +362,13 @@ public class Trace_Microtubules implements PlugIn
 		return run(ip, DEFAULT_SIGMA, true, true);
 	}
 	
-	public static ImageProcessor run(ImageProcessor ip, double sigma, boolean reduce_noise, boolean suppress_background)
+	public static ImageProcessor run(ImageProcessor ip, double psf_sigma, boolean reduce_noise, boolean suppress_background)
 	{
 		// duplicate image processor
 		ImageProcessor ip_original = ip;
 		ImageProcessor ip_dup = ip_original.duplicate();
-		int original_image_width = ip.getWidth();
-		int original_image_height = ip.getHeight();
+		int image_width = ip.getWidth();
+		int image_height = ip.getHeight();
 		
 		// ---------------------------------------------------------------------
 		
@@ -366,7 +401,7 @@ public class Trace_Microtubules implements PlugIn
 		{
 			Profiling.tic();
 			IJ.showStatus("Removing background noise");
-			ImageProcessor ip_wth = TopHatTransform.run(ip_step_1, (sigma+1)*DEFAULT_SIGMA);
+			ImageProcessor ip_wth = TopHatTransform.run(ip_step_1, SIGMA); // RSLV: slightly larger than expected sigma?
 			ip_step_2 = ImageArithmetic.subtract(ip_step_1, ip_wth);
 			
 			if(DEBUG_MODE_ENABLED)
@@ -389,212 +424,300 @@ public class Trace_Microtubules implements PlugIn
 		
 		// Step 3a: eigenvalue/vector decomposition of Hessian matrix
 		
-		// calculate derivatives of gaussian from image
-		Profiling.tic();
-		IJ.showStatus("Calculating derivative of gaussian");
-		ImageProcessor dx = DerivativeOfGaussian.derivativeX(ip_step_2, sigma);
-		ImageProcessor dy = DerivativeOfGaussian.derivativeY(ip_step_2, sigma);
-		ImageProcessor dxdx = DerivativeOfGaussian.derivativeXX(ip_step_2, sigma);
-		ImageProcessor dxdy = DerivativeOfGaussian.derivativeXY(ip_step_2, sigma);
-		ImageProcessor dydx = dxdy;//DerivativeOfGaussian.derivativeYX(ip_step_2, sigma);
-		ImageProcessor dydy = DerivativeOfGaussian.derivativeYY(ip_step_2, sigma);
-		Profiling.toc("Step 3a: Calculating image derivatives");
+		// store results [x][y][L1=0|L2=1|V1x=2|V1y=3|V2x=4|V2y=5|dlpx=6|dlpy=7]
+		//	[px][py][0] = lambda1_magnitude		n(t)
+		//	[px][py][1] = lambda1_direction_x	n_x(t)
+		//	[px][py][2] = lambda1_direction_y	n_y(t)
+		//	[px][py][3] = lambda2_magnitude		s(t)
+		//	[px][py][4] = lambda2_direction_x	s_x(t)
+		//	[px][py][5] = lambda2_direction_y	s_y(t)
+		//	[px][py][6] = super-resolved_x		t_x, or dlpx
+		//	[px][py][7] = super-resolved_y		t_y, or dlpy
+		double[][][] results_step_3 = new double[image_width][image_height][8];
 		
-		// Step 3b: calculate line points from eigenvalues and eigenvectors based on Hessian matrix
-		
-		// store results [x][y][lambda1=0|lambda2=1|V1x=2|V1y=3|V2x=4|V2y=5]
-		double[][][] results_step_3 = new double[original_image_width][original_image_height][6];
-		
-		// TMP: eigenvalues and eigenvectors in seperate image
-		ImageProcessor smallest_eigenvalues_ip = new FloatProcessor(original_image_width, original_image_height);
-		ImageProcessor largest_eigenvalues_ip = new FloatProcessor(original_image_width, original_image_height);
-		
-		ImageProcessor smallest_eigenvectors_ip = new ByteProcessor(original_image_width*5, original_image_height*5);
-		ImageProcessor largest_eigenvectors_ip = new ByteProcessor(original_image_width*5, original_image_height*5);
-		
-		ImageProcessor smallest_theta_ip = new FloatProcessor(original_image_width, original_image_height);
-		ImageProcessor largest_theta_ip = new FloatProcessor(original_image_width, original_image_height);
-		
-		Profiling.tic();
-		IJ.showStatus("Calculating eigenvalues and eigenvectors based on Hessian matrix");
-		for(int py = 0; py < original_image_height; ++py)
+		// initialise value of first eigenvalue for scale space optimisation
+		if(MODE == Mode.ABS_MAX || MODE == Mode.ABS_MIN)
 		{
-			for(int px = 0; px < original_image_width; ++px)
+			// NOTE: value can be left at default zero
+			// initialise to zero (will suffice because of abs)
+			//for(int px = 0; px < image_width; ++px)
+			//{
+			//	for(int px = 0; px < image_width; ++px)
+			//	{
+			//		results_step_3[px][py][0] = Double.MIN_VALUE;
+			//	}
+			//}
+		}
+		else if(MODE == Mode.MAX)
+		{
+			// initialise to Double.MIN_VALUE
+			for(int px = 0; px < image_width; ++px)
 			{
-				Matrix m = null; // NOTE: beware of null-pointer exceptions!
-				if(USE_WEINGARTEN_MATRIX)
+				for(int py = 0; py < image_height; ++py)
 				{
-					double dx_squared = dx.getf(px, py) * dx.getf(px, py);
-					double dy_squared = dy.getf(px, py) * dy.getf(px, py);
-					double dx_times_dy = dx.getf(px, py) * dy.getf(px, py);
-					double dy_times_dx = dx_times_dy; // dy.getf(px, py) * dx.getf(px, py);
-					
-					Matrix f1 = new Matrix(2, 2, 0); // 2x2 RC matrix with zeros
-					f1.set(0, 0, 1 + dx_squared);
-					f1.set(0, 1, dx_times_dy);
-					f1.set(1, 0, dy_times_dx);
-					f1.set(1, 1, 1 + dy_squared);
-					
-					Matrix f2 = new Matrix(2, 2, 0); // 2x2 RC matrix with zeros
-					f2.set(0, 0, dxdx.getf(px, py));
-					f2.set(0, 1, dxdy.getf(px, py));
-					f2.set(1, 0, dydx.getf(px, py));
-					f2.set(1, 1, dydy.getf(px, py));
-					
-					m = f2.times(f1.inverse());
-					m.timesEquals(-1 / Math.sqrt(1 + dx_squared + dy_squared)); // inplace scalar multiplication: same as m = m.times(-1 / Math.sqrt(1 + dx_squared + dy_squared));
+					results_step_3[px][py][0] = Double.MIN_VALUE;
 				}
-				else
-				{
-					// use Hessian matrix
-					m = new Matrix(2, 2, 0); // 2x2 RC matrix with zeros
-					m.set(0, 0, dxdx.getf(px, py));
-					m.set(0, 1, dxdy.getf(px, py));
-					m.set(1, 0, dydx.getf(px, py));
-					m.set(1, 1, dydy.getf(px, py));
-					//System.err.println("Cond="+h.cond());
-				}
-				
-				// compute eigenvalues and eigenvectors
-				EigenvalueDecomposition evd = m.eig();
-				Matrix d = evd.getD();
-				Matrix v = evd.getV();
-				
-				// determine largest [absolute] (perpendicular -> n(t)) and smallest [absolute] (parallel -> s(t)) eigenvalue and corresponding eigenvector
-				double d_00 = d.get(0,0);
-				double d_11 = d.get(1,1);
-				if(USE_ABSOLUTE_EIGENVALUES)
-				{
-					d_00 = Math.abs(d_00);
-					d_11 = Math.abs(d_11);
-				}
-				
-				// store smallest/largest eigenvalues and corresponding eigenvectors
-				if(d_00 >= d_11)
-				{
-					// d(0,0) is largest (absolute) eigenvalue
-					results_step_3[px][py][0] = d_00; //d.get(0,0); // lambda1
-					results_step_3[px][py][1] = d_11; //d.get(1,1); // lambda2
-					results_step_3[px][py][2] = v.get(0,0); // V1x
-					results_step_3[px][py][3] = v.get(1,0); // V1y
-					results_step_3[px][py][4] = v.get(0,1); // V2x
-					results_step_3[px][py][5] = v.get(1,1); // V2y
-				}
-				else
-				{
-					// d(1,1) is largest (absolute) eigenvalue
-					results_step_3[px][py][0] = d_11; //d.get(1,1); // lambda1
-					results_step_3[px][py][1] = d_00; //d.get(0,0); // lambda2
-					results_step_3[px][py][2] = v.get(0,1); // V1x
-					results_step_3[px][py][3] = v.get(1,1); // V1y
-					results_step_3[px][py][4] = v.get(0,0); // V2x
-					results_step_3[px][py][5] = v.get(1,0); // V2y
-				}
-				
-				// DEBUG: store eigenvalues in image processor
-				smallest_eigenvalues_ip.setf(px, py, (float)results_step_3[px][py][1]);
-				largest_eigenvalues_ip.setf(px, py, (float)results_step_3[px][py][0]);
-				
-				smallest_theta_ip.setf(px, py, (float)Math.atan2(results_step_3[px][py][4], results_step_3[px][py][5]));
-				largest_theta_ip.setf(px, py, (float)Math.atan2(results_step_3[px][py][2], results_step_3[px][py][3]));
-				
-				// DEBUG: store eigenvectors in image processor
-				int cx = px*5+2;
-				int cy = py*5+2;
-				smallest_eigenvectors_ip.set((int)cx, (int)cy, 255);
-				smallest_eigenvectors_ip.set((int)Math.floor(cx-results_step_3[px][py][4]), (int)Math.floor(cy-results_step_3[px][py][5]), 255);
-				smallest_eigenvectors_ip.set((int)Math.ceil(cx+results_step_3[px][py][4]), (int)Math.ceil(cy+results_step_3[px][py][5]), 255);
-				
-				largest_eigenvectors_ip.set((int)cx, (int)cy, 255);
-				largest_eigenvectors_ip.set((int)Math.floor(cx-results_step_3[px][py][2]), (int)Math.floor(cy-results_step_3[px][py][3]), 255);
-				largest_eigenvectors_ip.set((int)Math.ceil(cx+results_step_3[px][py][2]), (int)Math.ceil(cy+results_step_3[px][py][3]), 255);
-				
-				/* old code
-				double selected_eigenvalue = 0.0; // |n(t)|
-				double nx = 0.0; // n(t) -> perpendicular to s(t)
-				double ny = 0.0; // n(t) -> perpendicular to s(t)
-				
-				//if(Math.abs(d.get(0,0)) <= Math.abs(d.get(1,1)))
-				if(d.get(0,0) >= d.get(1,1)) // Stegers*
-				{
-					//selected_eigenvalue = Math.abs(d.get(1,1));
-					selected_eigenvalue = d.get(1,1); // Stegers*
-					nx = v.get(0,0);
-					ny = v.get(1,0);
-				}
-				else
-				{
-					//selected_eigenvalue = Math.abs(d.get(0,0));
-					selected_eigenvalue = d.get(0,0); // Stegers*
-					nx = v.get(0,1);
-					ny = v.get(1,1);
-				}
-				
-				// calculate position of line point
-				double t = -(dx.getf(px,py)*nx + dy.getf(px,py)*ny)/(dxdx.getf(px,py)*nx*nx + dxdy.getf(px,py)*dydx.getf(px,py)*nx*ny + dydy.getf(px,py)*ny*ny);
-				double dlpx = t*nx;
-				double dlpy = t*ny;
-				
-				// store line point
-				results_step_3[px][py][0] = dlpx;
-				results_step_3[px][py][1] = dlpy;
-				results_step_3[px][py][2] = selected_eigenvalue;
-				*/
-				
-				// TEMP: directional image
-				//direction_ip.setf(px, py, (float)Math.atan2(ny, nx));
 			}
 		}
-		Profiling.toc("Step 3b: Calculating Hessian eigenvalues and eigenvectors");
+		else if(MODE == Mode.MIN)
+		{
+			// initialise to Double.MAX_VALUE
+			for(int px = 0; px < image_width; ++px)
+			{
+				for(int py = 0; py < image_height; ++py)
+				{
+					results_step_3[px][py][0] = Double.MAX_VALUE;
+				}
+			}
+		}
+		
+		// store optimal response in scale space search
+		ImageProcessor dx = new FloatProcessor(image_width, image_height);
+		ImageProcessor dy = new FloatProcessor(image_width, image_height);
+		ImageProcessor dxdx = new FloatProcessor(image_width, image_height);
+		ImageProcessor dxdy = new FloatProcessor(image_width, image_height);
+		ImageProcessor dydx = new FloatProcessor(image_width, image_height);
+		ImageProcessor dydy = new FloatProcessor(image_width, image_height);
+		ImageProcessor sigma_map = new FloatProcessor(image_width, image_height);
+		
+		// search scale space: maximize selected eigenvalue's response
+		double lower_sigma = SIGMA - SIGMA_RANGE;
+		double upper_sigma = SIGMA + SIGMA_RANGE;
+		double step_sigma = (upper_sigma - lower_sigma) / (SIGMA_STEPS > 1 ? SIGMA_STEPS - 1 : SIGMA_STEPS); // 2 * SIGMA_RANGE / SIGMA_STEPS
+		for(int k = 0; k < SIGMA_STEPS; ++k) //(double current_sigma = lower_sigma; current_sigma <= upper_sigma; current_sigma += step_sigma)
+		{
+			// calculate current sigma
+			double current_sigma = lower_sigma + k * step_sigma;
+			
+			// calculate derivatives of gaussian from image
+			Profiling.tic();
+			IJ.showStatus("Calculating derivative of gaussian with sigma="+current_sigma);
+			ImageProcessor dx_t = DerivativeOfGaussian.derivativeX(ip_step_2, current_sigma);
+			ImageProcessor dy_t = DerivativeOfGaussian.derivativeY(ip_step_2, current_sigma);
+			ImageProcessor dxdx_t = DerivativeOfGaussian.derivativeXX(ip_step_2, current_sigma);
+			ImageProcessor dxdy_t = DerivativeOfGaussian.derivativeXY(ip_step_2, current_sigma);
+			ImageProcessor dydx_t = dxdy_t;//DerivativeOfGaussian.derivativeYX(ip_step_2, current_sigma);
+			ImageProcessor dydy_t = DerivativeOfGaussian.derivativeYY(ip_step_2, current_sigma);
+			Profiling.toc("Step 3a: Calculating image derivatives with sigma="+current_sigma);
+			
+			// Step 3b: calculate line points from eigenvalues and eigenvectors based on Hessian matrix
+			Profiling.tic();
+			IJ.showStatus("Calculating eigenvalues and eigenvectors based on Hessian matrix");
+			for(int py = 0; py < image_height; ++py)
+			{
+				for(int px = 0; px < image_width; ++px)
+				{
+					Matrix m = null; // NOTE: beware of null-pointer exceptions!
+					if(USE_WEINGARTEN_MATRIX)
+					{
+						double dx_squared = dx_t.getf(px, py) * dx_t.getf(px, py);
+						double dy_squared = dy_t.getf(px, py) * dy_t.getf(px, py);
+						double dx_times_dy = dx_t.getf(px, py) * dy_t.getf(px, py);
+						double dy_times_dx = dx_times_dy; // dy.getf(px, py) * dx.getf(px, py);
+						
+						Matrix f1 = new Matrix(2, 2, 0); // 2x2 RC matrix with zeros
+						f1.set(0, 0, 1 + dx_squared);
+						f1.set(0, 1, dx_times_dy);
+						f1.set(1, 0, dy_times_dx);
+						f1.set(1, 1, 1 + dy_squared);
+						
+						Matrix f2 = new Matrix(2, 2, 0); // 2x2 RC matrix with zeros
+						f2.set(0, 0, dxdx_t.getf(px, py));
+						f2.set(0, 1, dxdy_t.getf(px, py));
+						f2.set(1, 0, dydx_t.getf(px, py));
+						f2.set(1, 1, dydy_t.getf(px, py));
+						
+						m = f2.times(f1.inverse());
+						m.timesEquals(-1 / Math.sqrt(1 + dx_squared + dy_squared)); // inplace scalar multiplication: same as m = m.times(-1 / Math.sqrt(1 + dx_squared + dy_squared));
+					}
+					else
+					{
+						// use Hessian matrix
+						m = new Matrix(2, 2, 0); // 2x2 RC matrix with zeros
+						m.set(0, 0, dxdx_t.getf(px, py));
+						m.set(0, 1, dxdy_t.getf(px, py));
+						m.set(1, 0, dydx_t.getf(px, py));
+						m.set(1, 1, dydy_t.getf(px, py));
+						//System.err.println("Cond="+h.cond());
+					}
+					
+					// compute eigenvalues and eigenvectors
+					EigenvalueDecomposition evd = m.eig();
+					Matrix d = evd.getD();
+					Matrix v = evd.getV();
+					
+					// determine first and second eigenvalue and eigenvector
+					double first_eigenvalue = 0.0; // |n(t)|
+					double first_eigenvector_x = 0.0; // n(t) -> perpendicular to s(t)
+					double first_eigenvector_y = 0.0; // n(t) -> perpendicular to s(t)
+					double second_eigenvalue = 0.0;
+					double second_eigenvector_x = 0.0;
+					double second_eigenvector_y = 0.0;
+					
+					if((MODE == Mode.ABS_MAX && Math.abs(d.get(0,0)) >= Math.abs(d.get(1,1))) // Stegers*: absolute maximum
+					|| (MODE == Mode.MAX && d.get(0,0) >= d.get(1,1)) // real maximum
+					|| (MODE == Mode.ABS_MIN && Math.abs(d.get(0,0)) <= Math.abs(d.get(1,1))) // absolute minimum
+					|| (MODE == Mode.MIN && d.get(0,0) <= d.get(1,1))) // real minimum
+					{
+						// d(0,0) is largest (absolute) eigenvalue
+						first_eigenvalue = d.get(0,0); // L1
+						first_eigenvector_x = v.get(0,0); // V1x
+						first_eigenvector_y = v.get(1,0); // V1y
+						second_eigenvalue = d.get(1,1); // L2
+						second_eigenvector_x = v.get(0,1); // V2x
+						second_eigenvector_y = v.get(1,1); // V2y
+					}
+					else
+					{
+						// d(1,1) is largest (absolute) eigenvalue
+						first_eigenvalue = d.get(1,1); // L1
+						first_eigenvector_x = v.get(0,1); // V1x
+						first_eigenvector_y = v.get(1,1); // V1y
+						second_eigenvalue = d.get(0,0); // L2
+						second_eigenvector_x = v.get(0,0); // V2x
+						second_eigenvector_y = v.get(1,0); // V2y
+					}
+					
+					// check if new optimum found in scale space search
+					if((MODE == Mode.ABS_MAX && Math.abs(first_eigenvalue) >= Math.abs(results_step_3[px][py][0])) // Stegers*: absolute maximum
+					|| (MODE == Mode.MAX && first_eigenvalue >= results_step_3[px][py][0]) // real maximum
+					|| (MODE == Mode.ABS_MIN && Math.abs(first_eigenvalue) <= Math.abs(results_step_3[px][py][0])) // absolute minimum
+					|| (MODE == Mode.MIN && first_eigenvalue <= results_step_3[px][py][0])) // real minimum
+					{
+						// store eigenvalues and eigenvector for new optimum
+						results_step_3[px][py][0] = first_eigenvalue;
+						results_step_3[px][py][1] = first_eigenvector_x;
+						results_step_3[px][py][2] = first_eigenvector_y;
+						results_step_3[px][py][3] = second_eigenvalue;
+						results_step_3[px][py][4] = second_eigenvector_x;
+						results_step_3[px][py][5] = second_eigenvector_y;
+						
+						// store derivatives for new optimum
+						dx.setf(px, py, dx_t.getf(px, py));
+						dy.setf(px, py, dy_t.getf(px, py));
+						dxdx.setf(px, py, dxdx_t.getf(px, py));
+						dxdy.setf(px, py, dxdy_t.getf(px, py));
+						dydx.setf(px, py, dydx_t.getf(px, py));
+						dydy.setf(px, py, dydy_t.getf(px, py));
+						
+						// store sigma for new optimum
+						sigma_map.setf(px, py, (float)current_sigma);
+						
+						// calculate position of peak in second order Taylor polynomial from Steger's algorithm
+						double t = -(dx_t.getf(px,py)*first_eigenvector_x + dy_t.getf(px,py)*first_eigenvector_y)/(dxdx_t.getf(px,py)*first_eigenvector_x*first_eigenvector_x + dxdy_t.getf(px,py)*dydx.getf(px,py)*first_eigenvector_x*first_eigenvector_y + dydy_t.getf(px,py)*first_eigenvector_y*first_eigenvector_y);
+						double dlpx = t*first_eigenvector_x;
+						double dlpy = t*first_eigenvector_y;
+						
+						// store line point
+						results_step_3[px][py][6] = dlpx;
+						results_step_3[px][py][7] = dlpy;
+					}
+				}
+			}
+			Profiling.toc("Step 3b: Calculating Hessian eigenvalues and eigenvectors");
+		
+		} // end scale space search
 		
 		// DEBUG: show intermediate images
 		if(DEBUG_MODE_ENABLED)
 		{
-			// smallest/largest [absolute] eigenvalues
-			ImagePlus smallest_eigenvalues_imp = new ImagePlus("DEBUG: smallest" + (USE_ABSOLUTE_EIGENVALUES ? " absolute " : " ") + "eigenvalues", smallest_eigenvalues_ip);
-			smallest_eigenvalues_imp.resetDisplayRange();
-			smallest_eigenvalues_imp.show();
+			// eigenvalues and eigenvectors for debug images
+			ImageProcessor first_eigenvalues_ip = new FloatProcessor(image_width, image_height);
+			ImageProcessor second_eigenvalues_ip = new FloatProcessor(image_width, image_height);
 			
-			ImagePlus largest_eigenvalues_imp = new ImagePlus("DEBUG: largest" + (USE_ABSOLUTE_EIGENVALUES ? " absolute " : " ") + "eigenvalues", largest_eigenvalues_ip);
-			largest_eigenvalues_imp.resetDisplayRange();
-			largest_eigenvalues_imp.show();
+			ImageProcessor first_eigenvectors_ip = new ByteProcessor(image_width*5, image_height*5);
+			ImageProcessor second_eigenvectors_ip = new ByteProcessor(image_width*5, image_height*5);
+		
+			ImageProcessor first_eigenvectors_theta_ip = new FloatProcessor(image_width, image_height);
+			ImageProcessor second_eigenvectors_theta_ip = new FloatProcessor(image_width, image_height);
 			
-			// smallest/largest [absolute] eigenvectors
-			ImagePlus smallest_eigenvectors_imp = new ImagePlus("DEBUG: smallest eigenvectors", smallest_eigenvectors_ip);
-			smallest_eigenvectors_imp.resetDisplayRange();
-			smallest_eigenvectors_imp.show();
+			ImageProcessor first_theta_direction_ip = new FloatProcessor(image_width, image_height);
+			ImageProcessor second_theta_direction_ip = new FloatProcessor(image_width, image_height);
 			
-			ImagePlus largest_eigenvectors_imp = new ImagePlus("DEBUG: largest eigenvectors", largest_eigenvectors_ip);
-			largest_eigenvectors_imp.resetDisplayRange();
-			largest_eigenvectors_imp.show();
+			// fill images with data
+			for(int py = 0; py < image_height; ++py)
+			{
+				for( int px = 0; px < image_width; ++px)
+				{
+					// DEBUG: store eigenvalues in image processor
+					first_eigenvalues_ip.setf(px, py, (float)results_step_3[px][py][0]);
+					second_eigenvalues_ip.setf(px, py, (float)results_step_3[px][py][3]);
+					
+					// DEBUG: store eigenvectors in image processor
+					int cx = px*5+2;
+					int cy = py*5+2;
+					first_eigenvectors_ip.set((int)cx, (int)cy, 255);
+					first_eigenvectors_ip.set((int)Math.floor(cx-results_step_3[px][py][1]), (int)Math.floor(cy-results_step_3[px][py][2]), 255);
+					first_eigenvectors_ip.set((int)Math.ceil(cx+results_step_3[px][py][1]), (int)Math.ceil(cy+results_step_3[px][py][2]), 255);
+					
+					second_eigenvectors_ip.set((int)cx, (int)cy, 255);
+					second_eigenvectors_ip.set((int)Math.floor(cx-results_step_3[px][py][4]), (int)Math.floor(cy-results_step_3[px][py][5]), 255);
+					second_eigenvectors_ip.set((int)Math.ceil(cx+results_step_3[px][py][4]), (int)Math.ceil(cy+results_step_3[px][py][5]), 255);
+					
+					// store orientation of eigenvectors
+					double first_theta = Math.atan2(results_step_3[px][py][2], results_step_3[px][py][1]);
+					double second_theta = Math.atan2(results_step_3[px][py][5], results_step_3[px][py][4]);
+					
+					first_eigenvectors_theta_ip.setf(px, py, (float)first_theta);
+					second_eigenvectors_theta_ip.setf(px, py, (float)second_theta);
+					
+					// store direction (bi-directional range)?
+					// NOTE: map to CCW coordinate system with 0 degree pointing right
+					if(first_theta < 0) first_theta = Math.PI + first_theta; // map negative to positive
+					if(second_theta < 0) second_theta = Math.PI + second_theta; // map negative to positive
+					
+					first_theta = first_theta % Math.PI; // just to be sure
+					second_theta = second_theta % Math.PI; // just to be sure
+					
+					first_theta = first_theta * (180.0 / Math.PI); // radians to degrees
+					second_theta = second_theta * (180.0 / Math.PI); // radians to degrees
+					
+					first_theta_direction_ip.setf(px, py, (float)first_theta);
+					second_theta_direction_ip.setf(px, py, (float)second_theta);
+				}
+			}
 			
-			// theta direction
-			ImagePlus smallest_theta_imp = new ImagePlus("DEBUG: theta of smallest eigenvector", smallest_theta_ip);
-			smallest_theta_imp.resetDisplayRange();
-			smallest_theta_imp.show();
+			// sigma map
+			ImagePlus sigma_map_imp = new ImagePlus("DEBUG: scale space sigma", sigma_map);
+			sigma_map_imp.setDisplayRange(lower_sigma, upper_sigma);
+			sigma_map_imp.show();
 			
-			ImagePlus largest_theta_imp = new ImagePlus("DEBUG: theta of largest eigenvector", largest_theta_ip);
-			largest_theta_imp.resetDisplayRange();
-			largest_theta_imp.show();
+			// first and second eigenvalues
+			ImagePlus first_eigenvalues_imp = new ImagePlus("DEBUG: first eigenvalues", first_eigenvalues_ip);
+			first_eigenvalues_imp.resetDisplayRange();
+			first_eigenvalues_imp.show();
+			
+			ImagePlus second_eigenvalues_imp = new ImagePlus("DEBUG: second eigenvalues", second_eigenvalues_ip);
+			second_eigenvalues_imp.resetDisplayRange();
+			second_eigenvalues_imp.show();
+			
+			// first and second eigenvectors
+			ImagePlus first_eigenvectors_imp = new ImagePlus("DEBUG: first eigenvectors", first_eigenvectors_ip);
+			first_eigenvectors_imp.resetDisplayRange();
+			first_eigenvectors_imp.show();
+			
+			ImagePlus second_eigenvectors_imp = new ImagePlus("DEBUG: second eigenvectors", second_eigenvectors_ip);
+			second_eigenvectors_imp.resetDisplayRange();
+			second_eigenvectors_imp.show();
+			
+			// theta orientation
+			ImagePlus first_eigenvectors_theta_imp = new ImagePlus("DEBUG: theta of first eigenvectors", first_eigenvectors_theta_ip);
+			first_eigenvectors_theta_imp.resetDisplayRange();
+			first_eigenvectors_theta_imp.show();
+			
+			ImagePlus second_eigenvectors_theta_imp = new ImagePlus("DEBUG: theta of second eigenvectors", second_eigenvectors_theta_ip);
+			second_eigenvectors_theta_imp.resetDisplayRange();
+			second_eigenvectors_theta_imp.show();
+			
+			// direction
+			ImagePlus first_theta_direction_imp = new ImagePlus("DEBUG: direction of theta of first eigenvectors", first_theta_direction_ip);
+			first_theta_direction_imp.resetDisplayRange();
+			first_theta_direction_imp.show();
+			
+			ImagePlus second_theta_direction_imp = new ImagePlus("DEBUG: direction of theta of second eigenvectors", second_theta_direction_ip);
+			second_theta_direction_imp.resetDisplayRange();
+			second_theta_direction_imp.show();
 		}
-		
-		// TEMP: directional image
-		//ImagePlus direction_img = new ImagePlus("Directional image", direction_ip);
-		//direction_img.resetDisplayRange();
-		//direction_img.show();
-		
-		/* using seperate algorithm */
-//		ImageProcessor ip_step_3_magnitude = Stegers.run(ip_step_2, sigma);
-//		ip_step_3_magnitude.invert();
-//		
-//		if(DEBUG_MODE_ENABLED)
-//		{
-//			//ip_step_3.resetMinAndMax();
-//			ImagePlus debug_imp = new ImagePlus("DEBUG: Steger's algorithm magnitude image", ip_step_3_magnitude);
-//			debug_imp.resetDisplayRange();
-//			debug_imp.show();
-//		}
-//		// TODO: get more than just the magnitude image from Steger's algorithm
 		
 		// ---------------------------------------------------------------------
 		
@@ -604,24 +727,24 @@ public class Trace_Microtubules implements PlugIn
 		
 		//ImageProcessor fitting_ip = ip_original;
 		//if(FIT_ON_RAW_IMAGE) // TODO: implement choice
-		double[][][] fitting_results = new double[original_image_width][original_image_height][4]; // [x][y][bg=0|amp=1|mu=2|sigma=3]
-		double[][][] standard_error_fit_results = new double[original_image_width][original_image_height][4]; // [x][y][bg=0|amp=1|mu=2|sigma=3]
-		double[][] chi_squared_fit_results = new double[original_image_width][original_image_height];
-		double[][] r_squared_fit_results = new double[original_image_width][original_image_height];
-		for(int py = 0; py < original_image_height; ++py)
+		double[][][] fitting_results = new double[image_width][image_height][4]; // [x][y][bg=0|amp=1|mu=2|sigma=3]
+		double[][][] standard_error_fit_results = new double[image_width][image_height][4]; // [x][y][bg=0|amp=1|mu=2|sigma=3]
+		double[][] chi_squared_fit_results = new double[image_width][image_height];
+		double[][] r_squared_fit_results = new double[image_width][image_height];
+		for(int py = 0; py < image_height; ++py)
 		{
-			for(int px = 0; px < original_image_width; ++px)
+			for(int px = 0; px < image_width; ++px)
 			{
 				// get center pixel and vector orientation from (previous) step 3
-				double cx = px; // RSLV: use Steger's estimation?
-				double cy = py; // RSLV: use Steger's estimation?
-				double nx = results_step_3[px][py][4];
-				double ny = results_step_3[px][py][5];
-				//double theta = atan(ny, nx); // RSLV: add rotation as parameter for more optimal fit than Hessian can produce?
+				double cx = px; // RSLV: use Steger's estimation? cx = px + results_step_3[px][py][6]; // + dlpx
+				double cy = py; // RSLV: use Steger's estimation? cy = py + results_step_3[px][py][7]; // + dlpy
+				double nx = results_step_3[px][py][1];
+				double ny = results_step_3[px][py][2];
+				//double theta = Math.atan2(ny, nx); // RSLV: add rotation as parameter for more optimal fit than Hessian can produce?
 				
 				// extract line profile data from *original* image
 				ip.setInterpolationMethod(INTERPOLATION_METHOD);
-				int line_profile_width = (int)Math.ceil(3*sigma); // RSLV: 3*sigma minimum?
+				int line_profile_width = (int)Math.ceil(3*sigma_map.getf(px, py)); // RSLV: 3*sigma minimum? Currently using ceil!
 				int data_points = 2*SAMPLE_RATE*line_profile_width+1;
 				double[] x_data = new double[data_points];
 				double[] y_data = new double[data_points];
@@ -654,8 +777,8 @@ public class Trace_Microtubules implements PlugIn
 				double background = min_value;
 				double amplitude = max_value - min_value;
 				double mu = 0; // 0 = center in relative coordinate system
-				//double sigma = sigma;
-				double[] initial_parameters = new double[]{background, amplitude, mu, sigma};
+				double sig = sigma_map.getf(px, py);
+				double[] initial_parameters = new double[]{background, amplitude, mu, sig}; // NOTE: using sigma from scale space search
 				
 				// set up new LMA instance
 				LevenbergMarquardt lma = new LevenbergMarquardt();
@@ -687,17 +810,17 @@ public class Trace_Microtubules implements PlugIn
 		if(DEBUG_MODE_ENABLED)
 		{
 			// generate images
-			ImageProcessor background_fit_ip = new FloatProcessor(original_image_width, original_image_height);
-			ImageProcessor amplitude_fit_ip = new FloatProcessor(original_image_width, original_image_height);
-			ImageProcessor mu_fit_ip = new FloatProcessor(original_image_width, original_image_height);
-			ImageProcessor mu_squared_fit_ip = new FloatProcessor(original_image_width, original_image_height);
-			ImageProcessor sigma_fit_ip = new FloatProcessor(original_image_width, original_image_height);
-			ImageProcessor chi_squared_fit_ip = new FloatProcessor(original_image_width, original_image_height);
-			ImageProcessor log_chi_squared_fit_ip = new FloatProcessor(original_image_width, original_image_height);
-			ImageProcessor r_squared_fit_ip = new FloatProcessor(original_image_width, original_image_height);
-			for(int py = 0; py < original_image_height; ++py)
+			ImageProcessor background_fit_ip = new FloatProcessor(image_width, image_height);
+			ImageProcessor amplitude_fit_ip = new FloatProcessor(image_width, image_height);
+			ImageProcessor mu_fit_ip = new FloatProcessor(image_width, image_height);
+			ImageProcessor mu_squared_fit_ip = new FloatProcessor(image_width, image_height);
+			ImageProcessor sigma_fit_ip = new FloatProcessor(image_width, image_height);
+			ImageProcessor chi_squared_fit_ip = new FloatProcessor(image_width, image_height);
+			ImageProcessor log_chi_squared_fit_ip = new FloatProcessor(image_width, image_height);
+			ImageProcessor r_squared_fit_ip = new FloatProcessor(image_width, image_height);
+			for(int py = 0; py < image_height; ++py)
 			{
-				for( int px = 0; px < original_image_width; ++px)
+				for( int px = 0; px < image_width; ++px)
 				{
 					background_fit_ip.setf(px, py, (float)fitting_results[px][py][0]);
 					amplitude_fit_ip.setf(px, py, (float)fitting_results[px][py][1]);
@@ -706,7 +829,7 @@ public class Trace_Microtubules implements PlugIn
 					sigma_fit_ip.setf(px, py, (float)Math.abs(fitting_results[px][py][3]));
 					chi_squared_fit_ip.setf(px, py, (float)chi_squared_fit_results[px][py]);
 					log_chi_squared_fit_ip.setf(px, py, (float)Math.log(chi_squared_fit_results[px][py]));
-					r_squared_fit_ip.setf(px, py, (float)Math.log(r_squared_fit_results[px][py]));
+					r_squared_fit_ip.setf(px, py, (float)r_squared_fit_results[px][py]);
 				}
 			}
 			
@@ -725,12 +848,12 @@ public class Trace_Microtubules implements PlugIn
 			
 			ImagePlus mu_squared_fit_imp = new ImagePlus("DEBUG: mu squared fit", mu_squared_fit_ip);
 			mu_squared_fit_imp.resetDisplayRange();
-			mu_squared_fit_imp.setDisplayRange(0, sigma);
+			mu_squared_fit_imp.setDisplayRange(0, SIGMA);
 			mu_squared_fit_imp.show();
 			
 			ImagePlus sigma_fit_imp = new ImagePlus("DEBUG: sigma fit", sigma_fit_ip);
 			//sigma_fit_imp.resetDisplayRange();
-			sigma_fit_imp.setDisplayRange(0, 5*sigma);
+			sigma_fit_imp.setDisplayRange(0, 5*SIGMA); // RSLV: 5 * max scale space sigma?
 			sigma_fit_imp.show();
 			
 //			ImagePlus chi_fit_imp = new ImagePlus("DEBUG: chi sqaured fit", chi_fit_ip);
@@ -752,12 +875,13 @@ public class Trace_Microtubules implements PlugIn
 		Profiling.tic();
 		IJ.showStatus("Filter line points");
 		
-		double[][] filtered_pixels = new double[original_image_width][original_image_height];
-		ImageProcessor hit_ip = new ByteProcessor(original_image_width, original_image_height);
-		ImageProcessor hit_count_ip = new ByteProcessor(original_image_width, original_image_height);
-		for(int py = 0; py < original_image_height; ++py)
+		double[][] filtered_pixels = new double[image_width][image_height];
+		ImageProcessor hit_ip = new ByteProcessor(image_width, image_height);
+		ImageProcessor hit_count_ip = new ByteProcessor(image_width, image_height);
+		int hit_count_max = 0; // keep track of maximum hit count
+		for(int py = 0; py < image_height; ++py)
 		{
-			for(int px = 0; px < original_image_width; ++px)
+			for(int px = 0; px < image_width; ++px)
 			{
 				// filter on background
 				boolean filtered = false;
@@ -783,7 +907,7 @@ public class Trace_Microtubules implements PlugIn
 				}
 				
 				// filter on sigma
-				if(FILTER_ON_SIGMA && (fitting_results[px][py][3] < SIGMA_RATIO_LOWER_THRESHOLD * sigma || fitting_results[px][py][3] > SIGMA_RATIO_UPPER_THRESHOLD * sigma))
+				if(FILTER_ON_SIGMA && (fitting_results[px][py][3] < SIGMA_RATIO_LOWER_THRESHOLD * sigma_map.getf(px, py) || fitting_results[px][py][3] > SIGMA_RATIO_UPPER_THRESHOLD * sigma_map.getf(px, py))) // RSLV: use scale space sigma? Or fixed SIGMA?
 				{
 					// probably not a valid center line pixel; skip
 					filtered = true; //continue;
@@ -799,8 +923,24 @@ public class Trace_Microtubules implements PlugIn
 				// set pixel in hit images
 				if(!filtered)
 				{
+					// set hit image pixel
 					hit_ip.set(px, py, 255);
-					hit_count_ip.putPixel((int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][4]), (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][5]), hit_count_ip.getPixel((int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][4]), (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][5])) + 1); // NOTE: include mu correction
+					
+					// correct for peak position in coordinate
+					int cpx = (int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][1]);
+					int cpy = (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][2]);
+					
+					// get current count and increment by one
+					int cc = 1 + hit_count_ip.getPixel(cpx, cpy); // NOTE: getPixel for bounds checking!
+					
+					// store incremented count
+					hit_count_ip.putPixel(cpx, cpy, cc); // NOTE: putPixel for bounds checking!
+					
+					// retain maximum hit count value
+					if(cc > hit_count_max)
+					{
+						hit_count_max = cc;
+					}
 				}
 			}
 		}
@@ -810,6 +950,7 @@ public class Trace_Microtubules implements PlugIn
 		// using an iterative binary voting algorithm to test for membership
 		ImageProcessor hit_filled_ip = hit_ip.duplicate();
 		ImageProcessor hit_filled_count_ip = hit_count_ip.duplicate();
+		int hit_filled_count_max = hit_count_max; // keep track of maximum hit count
 		if(APPLY_FILL_HOLES_ALGORITHM)
 		{
 			Profiling.tic();
@@ -819,14 +960,28 @@ public class Trace_Microtubules implements PlugIn
 			hit_filled_ip = FillHoles.run(hit_filled_ip, VOTING_THRESHOLD);
 			
 			// create relaxed hit count image; RSLV: find a way to avoid second pass?
-			hit_filled_count_ip = new ByteProcessor(original_image_width, original_image_height); // clear image (fill with zeros)
-			for(int py = 0; py < original_image_height; ++py)
+			hit_filled_count_ip = new ByteProcessor(image_width, image_height); // clear image (fill with zeros)
+			for(int py = 0; py < image_height; ++py)
 			{
-				for(int px = 0; px < original_image_width; ++px)
+				for(int px = 0; px < image_width; ++px)
 				{
 					if(hit_filled_ip.get(px, py) > 0)
 					{
-						hit_filled_count_ip.putPixel((int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][4]), (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][5]), hit_filled_count_ip.getPixel((int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][4]), (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][5])) + 1); // NOTE: include mu correction
+						// correct for peak position in coordinate
+						int cpx = (int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][1]);
+						int cpy = (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][2]);
+						
+						// get current count and increment by one
+						int cc = 1 + hit_filled_count_ip.getPixel(cpx, cpy); // NOTE: getPixel for bounds checking!
+						
+						// store incremented count
+						hit_filled_count_ip.putPixel(cpx, cpy, cc); // NOTE: putPixel for bounds checking!
+						
+						// retain maximum hit count value
+						if(cc > hit_filled_count_max)
+						{
+							hit_filled_count_max = cc;
+						}
 					}
 				}
 			}
@@ -836,6 +991,7 @@ public class Trace_Microtubules implements PlugIn
 		// Step 5c: filter components on minimum area size
 		ImageProcessor hit_filled_filtered_ip = hit_filled_ip.duplicate();
 		ImageProcessor hit_filled_filtered_count_ip = hit_filled_count_ip.duplicate();
+		int hit_filled_filtered_count_max = hit_filled_count_max;
 		if(FILTER_ON_COMPONENT_MIN_AREA_SIZE)
 		{
 			Profiling.tic();
@@ -844,14 +1000,28 @@ public class Trace_Microtubules implements PlugIn
 			hit_filled_filtered_ip = ConnectedComponents.run(hit_filled_filtered_ip, ConnectedComponents.Connectivity.EIGHT_CONNECTIVITY, COMPONENT_MIN_AREA_SIZE_THRESHOLD, Integer.MAX_VALUE);
 			
 			// create relaxed hit count image; RSLV: find a way to avoid second pass!!
-			hit_filled_filtered_count_ip = new ByteProcessor(original_image_width, original_image_height); // clear image (fill with zeros)
-			for(int py = 0; py < original_image_height; ++py)
+			hit_filled_filtered_count_ip = new ByteProcessor(image_width, image_height); // clear image (fill with zeros)
+			for(int py = 0; py < image_height; ++py)
 			{
-				for(int px = 0; px < original_image_width; ++px)
+				for(int px = 0; px < image_width; ++px)
 				{
 					if(hit_filled_filtered_ip.get(px, py) > 0)
 					{
-						hit_filled_filtered_count_ip.putPixel((int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][4]), (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][5]), hit_filled_filtered_count_ip.getPixel((int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][4]), (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][5])) + 1); // NOTE: include mu correction
+						// correct for peak position in coordinate
+						int cpx = (int)(px+0.5+fitting_results[px][py][2]*results_step_3[px][py][1]);
+						int cpy = (int)(py+0.5+fitting_results[px][py][2]*results_step_3[px][py][2]);
+						
+						// get current count and increment by one
+						int cc = 1 + hit_filled_filtered_count_ip.getPixel(cpx, cpy); // NOTE: getPixel for bounds checking!
+						
+						// store incremented count
+						hit_filled_filtered_count_ip.putPixel(cpx, cpy, cc); // NOTE: putPixel for bounds checking!
+						
+						// retain maximum hit count value
+						if(cc > hit_filled_filtered_count_max)
+						{
+							hit_filled_filtered_count_max = cc;
+						}
 					}
 				}
 			}
@@ -859,13 +1029,13 @@ public class Trace_Microtubules implements PlugIn
 		}
 		
 		// DEBUG: show intermediate images
-//		if(DEBUG_MODE_ENABLED)
-//		{
+		if(DEBUG_MODE_ENABLED)
+		{
 			// show hit images
 			ImagePlus hit_imp = new ImagePlus("DEBUG: hit image", hit_ip);
 			ImagePlus hit_count_imp = new ImagePlus("DEBUG: hit count image", hit_count_ip);
 			hit_imp.resetDisplayRange();
-			hit_count_imp.resetDisplayRange();
+			hit_count_imp.setDisplayRange(0, hit_count_max); //resetDisplayRange();
 			hit_imp.show();
 			hit_count_imp.show();
 			
@@ -875,7 +1045,7 @@ public class Trace_Microtubules implements PlugIn
 				ImagePlus hit_filled_imp = new ImagePlus("DEBUG: hit filled image", hit_filled_ip);
 				ImagePlus hit_filled_count_imp = new ImagePlus("DEBUG: hit filled count image", hit_filled_count_ip);
 				hit_filled_imp.resetDisplayRange();
-				hit_filled_count_imp.resetDisplayRange();
+				hit_filled_count_imp.setDisplayRange(0, hit_filled_count_max); //resetDisplayRange();
 				hit_filled_imp.show();
 				hit_filled_count_imp.show();
 			}
@@ -886,11 +1056,11 @@ public class Trace_Microtubules implements PlugIn
 				ImagePlus hit_filled_filtered_imp = new ImagePlus("DEBUG: hit filled filtered image", hit_filled_filtered_ip);
 				ImagePlus hit_filled_filtered_count_imp = new ImagePlus("DEBUG: hit filled filtered count image", hit_filled_filtered_count_ip);
 				hit_filled_filtered_imp.resetDisplayRange();
-				hit_filled_filtered_count_imp.resetDisplayRange();
+				hit_filled_filtered_count_imp.setDisplayRange(0, hit_filled_filtered_count_max); //resetDisplayRange();
 				hit_filled_filtered_imp.show();
 				hit_filled_filtered_count_imp.show();
 			}
-//		}
+		}
 		
 		// *********************************************************************
 		
@@ -901,13 +1071,13 @@ public class Trace_Microtubules implements PlugIn
 			Profiling.tic();
 			final int SCALE_FACTOR = 1;
 			ip_original.setInterpolationMethod(ImageProcessor.NONE); // NONE, NEAREST_NEIGHBOR, BILINEAR, BICUBIC
-			ImageProcessor scaled_ip = ip_original.resize(original_image_width*SCALE_FACTOR, original_image_height*SCALE_FACTOR);//duplicate();
+			ImageProcessor scaled_ip = ip_original.resize(image_width*SCALE_FACTOR, image_height*SCALE_FACTOR);//duplicate();
 			Overlay eigenvectors_overlay = new Overlay();
 			
 			// create vector overlay of primary [and secondary] eigenvector on top of scaled *original* image
-			for(int py = 0; py < original_image_height; ++py)
+			for(int py = 0; py < image_height; ++py)
 			{
-				for(int px = 0; px < original_image_width; ++px)
+				for(int px = 0; px < image_width; ++px)
 				{
 					// check filter status of pixel
 					boolean filtered = (hit_filled_filtered_ip.get(px, py) == 0); // RSLV: probability; e.g 0.5 for pixels picked up by the hole filling algorithm?
@@ -916,34 +1086,32 @@ public class Trace_Microtubules implements PlugIn
 					double cx = px*SCALE_FACTOR+0.5*SCALE_FACTOR;
 					double cy = py*SCALE_FACTOR+0.5*SCALE_FACTOR;
 					
-					Roi largest_eigenvector_roi = new Line(cx-0.4*SCALE_FACTOR*results_step_3[px][py][2], cy-0.4*SCALE_FACTOR*results_step_3[px][py][3], cx+0.4*SCALE_FACTOR*results_step_3[px][py][2], cy+0.4*SCALE_FACTOR*results_step_3[px][py][3]);
+					Roi second_eigenvector_roi = new Line(cx-0.4*SCALE_FACTOR*results_step_3[px][py][4], cy-0.4*SCALE_FACTOR*results_step_3[px][py][5], cx+0.4*SCALE_FACTOR*results_step_3[px][py][4], cy+0.4*SCALE_FACTOR*results_step_3[px][py][5]);
 					
-					largest_eigenvector_roi.setStrokeColor(filtered ? Color.DARK_GRAY : Color.YELLOW);
-					largest_eigenvector_roi.setStrokeWidth(0.0);
-					largest_eigenvector_roi.setPosition(0); // RSLV: only applicable to single frame image
-					eigenvectors_overlay.add(largest_eigenvector_roi);
+					second_eigenvector_roi.setStrokeColor(filtered ? Color.DARK_GRAY : Color.YELLOW);
+					second_eigenvector_roi.setStrokeWidth(0.0);
+					second_eigenvector_roi.setPosition(0); // RSLV: only applicable to single frame image
+					eigenvectors_overlay.add(second_eigenvector_roi);
 					
 					if(!filtered)
 					{
-						Roi largest_eigenvector_corrected_roi = new Line(cx-0.4*SCALE_FACTOR*results_step_3[px][py][2]+fitting_results[px][py][2]*results_step_3[px][py][4], cy-0.4*SCALE_FACTOR*results_step_3[px][py][3]+fitting_results[px][py][2]*results_step_3[px][py][5], cx+0.4*SCALE_FACTOR*results_step_3[px][py][2]+fitting_results[px][py][2]*results_step_3[px][py][4], cy+0.4*SCALE_FACTOR*results_step_3[px][py][3]+fitting_results[px][py][2]*results_step_3[px][py][5]);
-						
-						largest_eigenvector_corrected_roi.setStrokeColor(Color.GREEN); // keep yellow for now
-						largest_eigenvector_corrected_roi.setStrokeWidth(0.0);
-						largest_eigenvector_corrected_roi.setPosition(0); // RSLV: only applicable to single frame image
-						eigenvectors_overlay.add(largest_eigenvector_corrected_roi);
+						Roi second_eigenvector_corrected_roi = new Line(cx-0.4*SCALE_FACTOR*results_step_3[px][py][4]+fitting_results[px][py][2]*results_step_3[px][py][1], cy-0.4*SCALE_FACTOR*results_step_3[px][py][5]+fitting_results[px][py][2]*results_step_3[px][py][2], cx+0.4*SCALE_FACTOR*results_step_3[px][py][4]+fitting_results[px][py][2]*results_step_3[px][py][1], cy+0.4*SCALE_FACTOR*results_step_3[px][py][5]+fitting_results[px][py][2]*results_step_3[px][py][2]);
+				
+						second_eigenvector_corrected_roi.setStrokeColor(Color.GREEN);
+						second_eigenvector_corrected_roi.setStrokeWidth(0.0);
+						second_eigenvector_corrected_roi.setPosition(0); // RSLV: only applicable to single frame image
+						eigenvectors_overlay.add(second_eigenvector_corrected_roi);
 					}
 					
-					/*Roi smallest_eigenvector_roi = new Line(cx-1.0*results_step_3[px][py][4], cy-1.0*results_step_3[px][py][5], cx+1.0*results_step_3[px][py][4], cy+1.0*results_step_3[px][py][5]);
+					/*Roi first_eigenvector_roi = new Line(cx-0.4*SCALE_FACTOR*results_step_3[px][py][1], cy-.4*SCALE_FACTOR*results_step_3[px][py][2], cx+0.4*SCALE_FACTOR*results_step_3[px][py][1], cy+0.4*SCALE_FACTOR*results_step_3[px][py][2]);
 					
-					smallest_eigenvector_roi.setStrokeWidth(0.0);
-					smallest_eigenvector_roi.setStrokeColor(Color.orange);
-					smallest_eigenvector_roi.setPosition(0); // NOTE: redundant in single frame instance
-					eigenvectors_overlay.add(smallest_eigenvector_roi);*/
+					first_eigenvector_roi.setStrokeWidth(0.0);
+					first_eigenvector_roi.setStrokeColor(Color.orange);
+					first_eigenvector_roi.setPosition(0); // NOTE: redundant in single frame instance
+					eigenvectors_overlay.add(first_eigenvector_roi);*/
 				}
 			}
 			
-			
-			// TEMP: outside debug
 			// show scaled image with eigenvectors overlay
 			final ImagePlus scaled_imp = new ImagePlus("DEBUG: eigenvectors overlay", scaled_ip); // TMP: pass as model to custom MouseAdapter
 			//scaled_imp.resetDisplayRange();
@@ -959,7 +1127,7 @@ public class Trace_Microtubules implements PlugIn
 			final double[][][] standard_error_fit_results_tmp = standard_error_fit_results; // TMP: pass as model to custom MouseAdapter
 			final double[][] chi_squared_fit_results_tmp = chi_squared_fit_results; // TMP: pass as model to custom MouseAdapter
 			final double[][] r_squared_fit_results_tmp = r_squared_fit_results; // TMP: pass as model to custom MouseAdapter
-			final double sigma_tmp = sigma; // TMP: pass as model to custom MouseAdapter
+			final double sigma_tmp = SIGMA; // TMP: pass as model to custom MouseAdapter // RSLV: pass sigma_map!!
 			final ImageProcessor ip_tmp = ip; // TMP: pass as model to custom MouseAdapter
 			
 			//img_cnv.setMagnification(24.0); // 2400% magnification; RSLV: cannot move view after setMagnification?!
@@ -1247,10 +1415,6 @@ public class Trace_Microtubules implements PlugIn
 		
 		// *********************************************************************
 		
-		// ---------------------------------------------------------------------
-		
-		// Future steps: trace individual lines
-		
 		// Display table with results
 		if(SHOW_RESULTS_TABLE)
 		{
@@ -1261,9 +1425,9 @@ public class Trace_Microtubules implements PlugIn
 			//raw_data_table.reset(); // to clear the table
 			
 			// TODO: fill table
-			for(int py = 0; py < original_image_height; ++py)
+			for(int py = 0; py < image_height; ++py)
 			{
-				for(int px = 0; px < original_image_width; ++px)
+				for(int px = 0; px < image_width; ++px)
 				{
 					// new row of results
 					raw_data_table.incrementCounter();
@@ -1315,9 +1479,16 @@ public class Trace_Microtubules implements PlugIn
 				}
 			}
 			
-			raw_data_table.show("Result of tracing");
+			raw_data_table.show("Result of segmentation");
 			Profiling.toc("Generating results table");
 		}
+		
+		
+		// *********************************************************************
+		
+		// Future steps: trace individual lines
+		
+		// ---------------------------------------------------------------------
 		
 		// Finally, return the result (should eventually be a list of coordinates for each line trace in the image)
 		return null;//ip_step_2; // TODO: keep up to date with final processing step
