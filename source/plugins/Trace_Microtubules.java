@@ -143,6 +143,14 @@ public class Trace_Microtubules implements PlugIn
 	public static final int LMA_NUM_ITERATIONS = 10;
 	public static final double LMA_DEFAULT_LAMBDA = 0.001;
 	
+	//public static final double DEFAULT_FRANGI_ALPHA = 0.5;
+	public static final double DEFAULT_FRANGI_BETA = 0.5;
+	public static final double DEFAULT_FRANGI_C = 0.5*65535;
+	
+	//public static double FRANGI_ALPHA = DEFAULT_FRANGI_ALPHA;
+	public static double FRANGI_BETA = DEFAULT_FRANGI_BETA;
+	public static double FRANGI_C = DEFAULT_FRANGI_C;
+	
 	/**
 	 *
 	 */
@@ -370,6 +378,22 @@ public class Trace_Microtubules implements PlugIn
 		int image_width = ip.getWidth();
 		int image_height = ip.getHeight();
 		
+		// get image statistics
+		int original_image_max_intensity = 0;
+		int original_image_min_intensity = 65535; // NOTE: assumes 16-bit images!
+		double original_image_avg_intensity = 0.0;
+		for(int px = 0; px < image_width; ++px)
+		{
+			for(int py = 0; py < image_height; ++py)
+			{
+				int pv = ip_original.get(px, py);
+				if(pv > original_image_max_intensity) original_image_max_intensity = pv;
+				if(pv < original_image_min_intensity) original_image_min_intensity = pv;
+				original_image_avg_intensity += pv;
+			}
+		}
+		original_image_avg_intensity /= image_width * image_height;
+		
 		// ---------------------------------------------------------------------
 		
 		// Step 1: median filtering to reduce camera shot noise
@@ -391,6 +415,10 @@ public class Trace_Microtubules implements PlugIn
 			}
 			
 			Profiling.toc("Step 1: Removing shot noise");
+		}
+		else
+		{
+			System.err.println("Skipping step 1: removing shot noise");
 		}
 		
 		// ---------------------------------------------------------------------
@@ -419,12 +447,36 @@ public class Trace_Microtubules implements PlugIn
 			
 			Profiling.toc("Step 2: Removing background");
 		}
+		else
+		{
+			System.err.println("Skipping step 2: removing background");
+		}
+		
+		// get image statistics
+		int preprocessed_image_max_intensity = 0;
+		int preprocessed_image_min_intensity = 65535; // NOTE: assumes 16-bit images!
+		double preprocessed_image_avg_intensity = 0.0;
+		for(int px = 0; px < image_width; ++px)
+		{
+			for(int py = 0; py < image_height; ++py)
+			{
+				int pv = ip_step_2.get(px, py);
+				if(pv > preprocessed_image_max_intensity) preprocessed_image_max_intensity = pv;
+				if(pv < preprocessed_image_min_intensity) preprocessed_image_min_intensity = pv;
+				preprocessed_image_avg_intensity += pv;
+			}
+		}
+		preprocessed_image_avg_intensity /= image_width * image_height;
+		
+		// RSLV: updating Frangi C?
+		FRANGI_C = preprocessed_image_avg_intensity;
+		System.err.println("DEBUG: automatically updating FRANGI_C to average intensity of preprocessed image, FRANGI_C=" + FRANGI_C);
 		
 		// ---------------------------------------------------------------------
 		
 		// Step 3a: eigenvalue/vector decomposition of Hessian matrix
 		
-		// store results [x][y][L1=0|L2=1|V1x=2|V1y=3|V2x=4|V2y=5|dlpx=6|dlpy=7]
+		// store results of eigendecomposition
 		//	[px][py][0] = lambda1_magnitude		n(t)
 		//	[px][py][1] = lambda1_direction_x	n_x(t)
 		//	[px][py][2] = lambda1_direction_y	n_y(t)
@@ -470,6 +522,17 @@ public class Trace_Microtubules implements PlugIn
 				}
 			}
 		}
+		
+		// store Frangi measures on eigenvalues; NOTE: |L1| <= |L2|
+		// beta is control parameter, set at 0.5
+		// c dependens on image bit depth, about half maximum Hessian matrix norm
+		//	[0] = frangi L1
+		//	[1] = frangi L2
+		//	[2] = blobness (eccentricity), L1 / L2; note: keep sign!
+		//	[3] = second order structureness, RSS of all elements, or Frobius norm
+		//	[4] = vesselness = exp(-[2]^2/2*FRANGI_BETA^2)(1-exp(-[3]^2/2*FRANGI_C^2))
+		double[][][] frangi_measures = new double[image_width][image_height][5];
+		double max_frobius_norm = Double.MIN_VALUE;
 		
 		// store optimal response in scale space search
 		ImageProcessor dx = new FloatProcessor(image_width, image_height);
@@ -538,7 +601,6 @@ public class Trace_Microtubules implements PlugIn
 						m.set(0, 1, dxdy_t.getf(px, py));
 						m.set(1, 0, dydx_t.getf(px, py));
 						m.set(1, 1, dydy_t.getf(px, py));
-						//System.err.println("Cond="+h.cond());
 					}
 					
 					// compute eigenvalues and eigenvectors
@@ -584,6 +646,31 @@ public class Trace_Microtubules implements PlugIn
 					|| (MODE == Mode.ABS_MIN && Math.abs(first_eigenvalue) <= Math.abs(results_step_3[px][py][0])) // absolute minimum
 					|| (MODE == Mode.MIN && first_eigenvalue <= results_step_3[px][py][0])) // real minimum
 					{
+						// store Frangi measures
+						double frangi_l1 = first_eigenvalue;
+						double frangi_l2 = second_eigenvalue;
+						if(Math.abs(first_eigenvalue) > Math.abs(second_eigenvalue))
+						{
+							frangi_l1 = second_eigenvalue;
+							frangi_l2 = first_eigenvalue;
+						}
+						
+						frangi_measures[px][py][0] = frangi_l1;
+						frangi_measures[px][py][1] = frangi_l2;
+						frangi_measures[px][py][2] = frangi_l1 / (frangi_l2 + 1e20); // NOTE: beware of division by zero!
+						frangi_measures[px][py][3] = m.normF(); // RSLV: what if not Hessian but Weingarten matrix?
+						frangi_measures[px][py][4] = Math.exp(-(frangi_measures[px][py][2]*frangi_measures[px][py][2])/(2*FRANGI_BETA*FRANGI_BETA))*(1-Math.exp(-(frangi_measures[px][py][3]*frangi_measures[px][py][3])/(2*FRANGI_C*FRANGI_C)));
+						if(frangi_l2 > 0)
+						{
+							frangi_measures[px][py][4] = 0.0;
+						}
+						
+						// keep track of maximum Frobius norm
+						if(frangi_measures[px][py][3] > max_frobius_norm)
+						{
+							max_frobius_norm = frangi_measures[px][py][3];
+						}
+						
 						// store eigenvalues and eigenvector for new optimum
 						results_step_3[px][py][0] = first_eigenvalue;
 						results_step_3[px][py][1] = first_eigenvector_x;
@@ -618,7 +705,7 @@ public class Trace_Microtubules implements PlugIn
 		
 		} // end scale space search
 		
-		// DEBUG: show intermediate images
+		// show intermediate images
 		if(DEBUG_MODE_ENABLED)
 		{
 			// eigenvalues and eigenvectors for debug images
@@ -633,6 +720,10 @@ public class Trace_Microtubules implements PlugIn
 			
 			ImageProcessor first_theta_direction_ip = new FloatProcessor(image_width, image_height);
 			ImageProcessor second_theta_direction_ip = new FloatProcessor(image_width, image_height);
+			
+			ImageProcessor frangi_blobness_ip = new FloatProcessor(image_width, image_height);
+			ImageProcessor frangi_structureness_ip = new FloatProcessor(image_width, image_height);
+			ImageProcessor frangi_vesselness_ip = new FloatProcessor(image_width, image_height);
 			
 			// fill images with data
 			for(int py = 0; py < image_height; ++py)
@@ -674,6 +765,11 @@ public class Trace_Microtubules implements PlugIn
 					
 					first_theta_direction_ip.setf(px, py, (float)first_theta);
 					second_theta_direction_ip.setf(px, py, (float)second_theta);
+					
+					// store Frangi measures
+					frangi_blobness_ip.setf(px, py, (float)frangi_measures[px][py][2]);
+					frangi_structureness_ip.setf(px, py, (float)frangi_measures[px][py][3]);
+					frangi_vesselness_ip.setf(px, py, (float)frangi_measures[px][py][4]);
 				}
 			}
 			
@@ -717,6 +813,19 @@ public class Trace_Microtubules implements PlugIn
 			ImagePlus second_theta_direction_imp = new ImagePlus("DEBUG: direction of theta of second eigenvectors", second_theta_direction_ip);
 			second_theta_direction_imp.resetDisplayRange();
 			second_theta_direction_imp.show();
+			
+			// Frangi measures
+			ImagePlus frangi_blobness_imp = new ImagePlus("DEBUG: Frangi blobness measure", frangi_blobness_ip);
+			frangi_blobness_imp.resetDisplayRange();
+			frangi_blobness_imp.show();
+			
+			ImagePlus frangi_structureness_imp = new ImagePlus("DEBUG: Frangi structureness measure", frangi_structureness_ip);
+			frangi_structureness_imp.resetDisplayRange();
+			frangi_structureness_imp.show();
+			
+			ImagePlus frangi_vesselness_imp = new ImagePlus("DEBUG: Frangi vesselness measure", frangi_vesselness_ip);
+			frangi_vesselness_imp.resetDisplayRange();
+			frangi_vesselness_imp.show();
 		}
 		
 		// ---------------------------------------------------------------------
@@ -1201,16 +1310,17 @@ public class Trace_Microtubules implements PlugIn
 							double tx = current_x + 0.5;
 							double ty = current_y + 0.5;
 							
-							// mu correction
-							tx += hessian_results_tmp[(int)tx][(int)ty][4] * fitting_results_tmp[(int)tx][(int)ty][2];
-							ty += hessian_results_tmp[(int)tx][(int)ty][5] * fitting_results_tmp[(int)tx][(int)ty][2];
+							// mu correction (first eigenvector)
+							tx += hessian_results_tmp[(int)tx][(int)ty][1] * fitting_results_tmp[(int)tx][(int)ty][2];
+							ty += hessian_results_tmp[(int)tx][(int)ty][2] * fitting_results_tmp[(int)tx][(int)ty][2];
 							
 							if((int)tx != current_x || (int)ty != current_y)
 							{
 								tx = (int)tx + 0.5;
 								ty = (int)ty + 0.5;
-								tx += hessian_results_tmp[(int)tx][(int)ty][4] * fitting_results_tmp[(int)tx][(int)ty][2];
-								ty += hessian_results_tmp[(int)tx][(int)ty][5] * fitting_results_tmp[(int)tx][(int)ty][2];
+								// mu correction (first eigenvector)
+								tx += hessian_results_tmp[(int)tx][(int)ty][1] * fitting_results_tmp[(int)tx][(int)ty][2];
+								ty += hessian_results_tmp[(int)tx][(int)ty][2] * fitting_results_tmp[(int)tx][(int)ty][2];
 							}
 							
 							/*
@@ -1226,9 +1336,6 @@ public class Trace_Microtubules implements PlugIn
 								// pixel center
 								tx = (int)tx + 0.5;
 								ty = (int)tx + 0.5;
-								
-								
-								
 							}
 							while((int)tx != (int)prev_tx || (int)ty != (int)prev_ty); // WARN: could generate a deadlock!
 							*/
@@ -1243,27 +1350,28 @@ public class Trace_Microtubules implements PlugIn
 								double prev_tx = tx;
 								double prev_ty = ty;
 								
-								// get largest eigenvector of pixel
-								double sx = hessian_results_tmp[(int)tx][(int)ty][2]; // TODO: solve ArrayIndexOutOfBounds when running off the image!
-								double sy = hessian_results_tmp[(int)tx][(int)ty][3]; // TODO: solve ArrayIndexOutOfBounds when running off the image!
+								// get second eigenvector of pixel
+								double sx = hessian_results_tmp[(int)tx][(int)ty][4]; // TODO: solve ArrayIndexOutOfBounds when running off the image!
+								double sy = hessian_results_tmp[(int)tx][(int)ty][5]; // TODO: solve ArrayIndexOutOfBounds when running off the image!
 								tx += STEP_SIZE * sx;
 								ty += STEP_SIZE * sy;
 								
-								// mu correction
-								tx += hessian_results_tmp[(int)tx][(int)ty][4] * fitting_results_tmp[(int)tx][(int)ty][2];
-								ty += hessian_results_tmp[(int)tx][(int)ty][5] * fitting_results_tmp[(int)tx][(int)ty][2];
+								// mu correction (first eigenvector)
+								tx += hessian_results_tmp[(int)tx][(int)ty][1] * fitting_results_tmp[(int)tx][(int)ty][2];
+								ty += hessian_results_tmp[(int)tx][(int)ty][2] * fitting_results_tmp[(int)tx][(int)ty][2];
 								
 								// repeat if in next pixel
 								if((int)tx != (int)prev_tx || (int)ty != (int)prev_ty)
 								{
-									sx = hessian_results_tmp[(int)tx][(int)ty][2]; // TODO: solve ArrayIndexOutOfBounds when running off the image!
-									sy = hessian_results_tmp[(int)tx][(int)ty][3]; // TODO: solve ArrayIndexOutOfBounds when running off the image!
+									// get second eigenvector
+									sx = hessian_results_tmp[(int)tx][(int)ty][4]; // TODO: solve ArrayIndexOutOfBounds when running off the image!
+									sy = hessian_results_tmp[(int)tx][(int)ty][5]; // TODO: solve ArrayIndexOutOfBounds when running off the image!
 									tx = (int)tx + 0.5; //+= STEP_SIZE * sx;
 									ty = (int)ty + 0.5; //+= STEP_SIZE * sy;
 									
-									// mu correction
-									tx += hessian_results_tmp[(int)tx][(int)ty][4] * fitting_results_tmp[(int)tx][(int)ty][2];
-									ty += hessian_results_tmp[(int)tx][(int)ty][5] * fitting_results_tmp[(int)tx][(int)ty][2];
+									// mu correction (first eigenvector)
+									tx += hessian_results_tmp[(int)tx][(int)ty][1] * fitting_results_tmp[(int)tx][(int)ty][2];
+									ty += hessian_results_tmp[(int)tx][(int)ty][2] * fitting_results_tmp[(int)tx][(int)ty][2];
 								}
 								
 								trace_xs_vec.add(tx);
@@ -1313,8 +1421,8 @@ public class Trace_Microtubules implements PlugIn
 							// remove previous trace first
 							scaled_imp.getOverlay().remove(perpendicular_line);
 						}
-						double nx = hessian_results_tmp[current_x][current_y][4];
-						double ny = hessian_results_tmp[current_x][current_y][5];
+						double nx = hessian_results_tmp[current_x][current_y][1];
+						double ny = hessian_results_tmp[current_x][current_y][2];
 						perpendicular_line = new Line(current_x+0.5-nx*3*sigma_tmp, current_y+0.5-ny*3*sigma_tmp, current_x+0.5+nx*3*sigma_tmp, current_y+0.5+ny*3*sigma_tmp);
 						perpendicular_line.setStrokeColor(Color.RED);
 						perpendicular_line.setStrokeWidth(0.0);
@@ -1393,7 +1501,7 @@ public class Trace_Microtubules implements PlugIn
 						profile_plot.setColor(Color.RED);
 						profile_plot.addLabel(0.02, 0.05, " o   Line profile");
 						profile_plot.setColor(Color.BLUE);
-						profile_plot.addLabel(0.02, 0.08, "---  Gaussian fit\n       bg  = " + String.format("%.2f", fit_param[0]) + "\n       amp = " + String.format("%.2f", fit_param[1]) + "\n       mu  = " + String.format("%.4f", fit_param[2]) + "\n       sig = " + String.format("%.4f", fit_param[3]) + "\n       chi = " + String.format("%.1f", chi_squared_fit_results_tmp[current_x][current_y]) + "\n       log = " + String.format("%.5f", Math.log(chi_squared_fit_results_tmp[current_x][current_y])) + "\n       R^2 = " + String.format("%.4f", r_squared_fit_results_tmp[current_x][current_y]) + "\n\n       ecc = " + String.format("%.2f", Math.sqrt((hessian_results_tmp[current_x][current_y][1]*hessian_results_tmp[current_x][current_y][1]) - (hessian_results_tmp[current_x][current_y][0]*hessian_results_tmp[current_x][current_y][0]))) + "\n       mean = " + String.format("%.4f", mean_value) + "\n       var = " + String.format("%.4f", variance_value)+ "\n       lvar = " + String.format("%.4f", Math.log(variance_value)) + "\n       chi = " + String.format("%.1f", chi_square)+ "\n       chi_log = " + String.format("%.4f", Math.log(chi_square)) + "\n       chi_var = " + String.format("%.4f", chi_square_variance)+ "\n       chi_sum = " + String.format("%.4f", chi_square_sum_square) + "\n       chi_exp = " + String.format("%.4f", chi_square_expected));
+						profile_plot.addLabel(0.02, 0.08, "---  Gaussian fit\n       bg  = " + String.format("%.2f", fit_param[0]) + "\n       amp = " + String.format("%.2f", fit_param[1]) + "\n       mu  = " + String.format("%.4f", fit_param[2]) + "\n       sig = " + String.format("%.4f", fit_param[3]) + "\n       chi = " + String.format("%.1f", chi_squared_fit_results_tmp[current_x][current_y]) + "\n       log = " + String.format("%.5f", Math.log(chi_squared_fit_results_tmp[current_x][current_y])) + "\n       R^2 = " + String.format("%.4f", r_squared_fit_results_tmp[current_x][current_y]) + "\n\n       ecc = " + String.format("%.2f", Math.sqrt((hessian_results_tmp[current_x][current_y][3]*hessian_results_tmp[current_x][current_y][3]) - (hessian_results_tmp[current_x][current_y][0]*hessian_results_tmp[current_x][current_y][0]))) + "\n       mean = " + String.format("%.4f", mean_value) + "\n       var = " + String.format("%.4f", variance_value)+ "\n       lvar = " + String.format("%.4f", Math.log(variance_value)) + "\n       chi = " + String.format("%.1f", chi_square)+ "\n       chi_log = " + String.format("%.4f", Math.log(chi_square)) + "\n       chi_var = " + String.format("%.4f", chi_square_variance)+ "\n       chi_sum = " + String.format("%.4f", chi_square_sum_square) + "\n       chi_exp = " + String.format("%.4f", chi_square_expected));
 						
 						// create new plot window or draw in existing plot window
 						if(plot_wnd != null && !plot_wnd.isClosed())
@@ -1447,11 +1555,16 @@ public class Trace_Microtubules implements PlugIn
 					
 					// Hessian matrix
 					raw_data_table.addValue("L1", results_step_3[px][py][0]); // L1
-					raw_data_table.addValue("L2", results_step_3[px][py][1]); // L2
-					raw_data_table.addValue("V1x", results_step_3[px][py][2]); // V1x
-					raw_data_table.addValue("V1y", results_step_3[px][py][3]); // V1y
+					raw_data_table.addValue("V1x", results_step_3[px][py][1]); // V1x
+					raw_data_table.addValue("V1y", results_step_3[px][py][2]); // V1y
+					raw_data_table.addValue("L2", results_step_3[px][py][3]); // L2
 					raw_data_table.addValue("V2x", results_step_3[px][py][4]); // V2x
 					raw_data_table.addValue("V2y", results_step_3[px][py][5]); // V2y
+					
+					// Frangi measures
+					raw_data_table.addValue("blobness", frangi_measures[px][py][2]);
+					raw_data_table.addValue("structureness", frangi_measures[px][py][3]);
+					raw_data_table.addValue("vesselness", frangi_measures[px][py][4]);
 					
 					// fitted parameters of line profile fit
 					raw_data_table.addValue("bg", fitting_results[px][py][0]); // bg
@@ -1482,7 +1595,6 @@ public class Trace_Microtubules implements PlugIn
 			raw_data_table.show("Result of segmentation");
 			Profiling.toc("Generating results table");
 		}
-		
 		
 		// *********************************************************************
 		
