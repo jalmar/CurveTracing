@@ -64,10 +64,12 @@ public class Trace_Microtubules implements PlugIn
 	public static final double DEFAULT_SIGMA = 2.0;
 	public static final double DEFAULT_SIGMA_RANGE = 0.0;
 	public static final int DEFAULT_SIGMA_STEPS = 1;
+	public static final double DEFAULT_SCALE_SPACE_GAMMA = 0.5;
 	
 	public static double SIGMA = DEFAULT_SIGMA;
 	public static double SIGMA_RANGE = DEFAULT_SIGMA_RANGE;
 	public static double SIGMA_STEPS = DEFAULT_SIGMA_STEPS;
+	public static double SCALE_SPACE_GAMMA = DEFAULT_SCALE_SPACE_GAMMA;
 	
 	public static final boolean DEFAULT_REDUCE_NOISE = true;
 	public static final int DEFAULT_MEDIAN_FILTER_SIZE = 3; // direct neighbourhood for shot noise filtering
@@ -172,6 +174,7 @@ public class Trace_Microtubules implements PlugIn
 		gd.addNumericField("PSF_sigma", Prefs.get("mt_trace.psf_sigma", DEFAULT_SIGMA), 2);
 		gd.addNumericField("PSF_sigma_range", Prefs.get("mt_trace.psf_sigma_range", DEFAULT_SIGMA_RANGE), 2);
 		gd.addNumericField("PSF_sigma_steps", Prefs.get("mt_trace.psf_sigma_steps", DEFAULT_SIGMA_STEPS), 0);
+		gd.addNumericField("Scale_space_gamma", Prefs.get("mt_trace.scale_space_gamma", DEFAULT_SCALE_SPACE_GAMMA), 2);
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
@@ -228,6 +231,7 @@ public class Trace_Microtubules implements PlugIn
 		SIGMA = gd.getNextNumber();
 		SIGMA_RANGE = gd.getNextNumber();
 		SIGMA_STEPS = (int)gd.getNextNumber();
+		SCALE_SPACE_GAMMA = gd.getNextNumber();
 		
 		REDUCE_NOISE = gd.getNextBoolean();
 		SUPPRESS_BACKGROUND = gd.getNextBoolean();
@@ -289,6 +293,7 @@ public class Trace_Microtubules implements PlugIn
 		Prefs.set("mt_trace.psf_sigma", SIGMA);
 		Prefs.set("mt_trace.psf_sigma_range", SIGMA_RANGE);
 		Prefs.set("mt_trace.psf_sigma_steps", SIGMA_STEPS);
+		Prefs.set("mt_trace.scale_space_gamma", SCALE_SPACE_GAMMA);
 		Prefs.set("mt_trace.reduce_noise", REDUCE_NOISE);
 		Prefs.set("mt_trace.suppress_background", SUPPRESS_BACKGROUND);
 		Prefs.set("mt_trace.sample_rate", SAMPLE_RATE);
@@ -532,7 +537,7 @@ public class Trace_Microtubules implements PlugIn
 		//	[3] = second order structureness, RSS of all elements, or Frobius norm
 		//	[4] = vesselness = exp(-[2]^2/2*FRANGI_BETA^2)(1-exp(-[3]^2/2*FRANGI_C^2))
 		double[][][] frangi_measures = new double[image_width][image_height][5];
-		double max_frobius_norm = Double.MIN_VALUE;
+		//double max_frobius_norm = Double.MIN_VALUE;
 		
 		// store optimal response in scale space search
 		ImageProcessor dx = new FloatProcessor(image_width, image_height);
@@ -561,6 +566,20 @@ public class Trace_Microtubules implements PlugIn
 			ImageProcessor dxdy_t = DerivativeOfGaussian.derivativeXY(ip_step_2, current_sigma);
 			ImageProcessor dydx_t = dxdy_t;//DerivativeOfGaussian.derivativeYX(ip_step_2, current_sigma);
 			ImageProcessor dydy_t = DerivativeOfGaussian.derivativeYY(ip_step_2, current_sigma);
+			
+			// normalize gradients to scale space
+			if(SCALE_SPACE_GAMMA > 0)
+			{
+				double scale_space_factor = Math.pow(current_sigma, SCALE_SPACE_GAMMA);
+				dx_t.multiply(scale_space_factor);
+				dy_t.multiply(scale_space_factor);
+				dxdx_t.multiply(scale_space_factor);
+				dxdy_t.multiply(scale_space_factor);
+				dydx_t.multiply(scale_space_factor);
+				dydy_t.multiply(scale_space_factor);
+				
+			}
+			
 			Profiling.toc("Step 3a: Calculating image derivatives with sigma="+current_sigma);
 			
 			// Step 3b: calculate line points from eigenvalues and eigenvectors based on Hessian matrix
@@ -666,10 +685,10 @@ public class Trace_Microtubules implements PlugIn
 						}
 						
 						// keep track of maximum Frobius norm
-						if(frangi_measures[px][py][3] > max_frobius_norm)
-						{
-							max_frobius_norm = frangi_measures[px][py][3];
-						}
+						//if(frangi_measures[px][py][3] > max_frobius_norm)
+						//{
+						//	max_frobius_norm = frangi_measures[px][py][3];
+						//}
 						
 						// store eigenvalues and eigenvector for new optimum
 						results_step_3[px][py][0] = first_eigenvalue;
