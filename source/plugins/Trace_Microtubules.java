@@ -795,7 +795,7 @@ public class Trace_Microtubules implements PlugIn
 			// sigma map
 			ImagePlus sigma_map_imp = new ImagePlus("DEBUG: scale space sigma", sigma_map);
 			sigma_map_imp.setDisplayRange(lower_sigma, upper_sigma);
-			sigma_map_imp.show();
+//			sigma_map_imp.show();
 			
 			// first and second eigenvalues
 			ImagePlus first_eigenvalues_imp = new ImagePlus("DEBUG: first eigenvalues", first_eigenvalues_ip);
@@ -804,43 +804,43 @@ public class Trace_Microtubules implements PlugIn
 			
 			ImagePlus second_eigenvalues_imp = new ImagePlus("DEBUG: second eigenvalues", second_eigenvalues_ip);
 			second_eigenvalues_imp.resetDisplayRange();
-			second_eigenvalues_imp.show();
+//			second_eigenvalues_imp.show();
 			
 			// first and second eigenvectors
 			ImagePlus first_eigenvectors_imp = new ImagePlus("DEBUG: first eigenvectors", first_eigenvectors_ip);
 			first_eigenvectors_imp.resetDisplayRange();
-			first_eigenvectors_imp.show();
+//			first_eigenvectors_imp.show();
 			
 			ImagePlus second_eigenvectors_imp = new ImagePlus("DEBUG: second eigenvectors", second_eigenvectors_ip);
 			second_eigenvectors_imp.resetDisplayRange();
-			second_eigenvectors_imp.show();
+//			second_eigenvectors_imp.show();
 			
 			// theta orientation
 			ImagePlus first_eigenvectors_theta_imp = new ImagePlus("DEBUG: theta of first eigenvectors", first_eigenvectors_theta_ip);
 			first_eigenvectors_theta_imp.resetDisplayRange();
-			first_eigenvectors_theta_imp.show();
+//			first_eigenvectors_theta_imp.show();
 			
 			ImagePlus second_eigenvectors_theta_imp = new ImagePlus("DEBUG: theta of second eigenvectors", second_eigenvectors_theta_ip);
 			second_eigenvectors_theta_imp.resetDisplayRange();
-			second_eigenvectors_theta_imp.show();
+//			second_eigenvectors_theta_imp.show();
 			
 			// direction
 			ImagePlus first_theta_direction_imp = new ImagePlus("DEBUG: direction of theta of first eigenvectors", first_theta_direction_ip);
 			first_theta_direction_imp.resetDisplayRange();
-			first_theta_direction_imp.show();
+//			first_theta_direction_imp.show();
 			
 			ImagePlus second_theta_direction_imp = new ImagePlus("DEBUG: direction of theta of second eigenvectors", second_theta_direction_ip);
 			second_theta_direction_imp.resetDisplayRange();
-			second_theta_direction_imp.show();
+//			second_theta_direction_imp.show();
 			
 			// Frangi measures
 			ImagePlus frangi_blobness_imp = new ImagePlus("DEBUG: Frangi blobness measure", frangi_blobness_ip);
 			frangi_blobness_imp.resetDisplayRange();
-			frangi_blobness_imp.show();
+//			frangi_blobness_imp.show();
 			
 			ImagePlus frangi_structureness_imp = new ImagePlus("DEBUG: Frangi structureness measure", frangi_structureness_ip);
 			frangi_structureness_imp.resetDisplayRange();
-			frangi_structureness_imp.show();
+//			frangi_structureness_imp.show();
 			
 			ImagePlus frangi_vesselness_imp = new ImagePlus("DEBUG: Frangi vesselness measure", frangi_vesselness_ip);
 			frangi_vesselness_imp.resetDisplayRange();
@@ -962,21 +962,22 @@ public class Trace_Microtubules implements PlugIn
 			}
 			
 			// smallest/largest [absolute] eigenvalues
-			ImagePlus background_fit_imp = new ImagePlus("DEBUG: background fit", background_fit_ip);
-			background_fit_imp.resetDisplayRange();
-			background_fit_imp.show();
+//			ImagePlus background_fit_imp = new ImagePlus("DEBUG: background fit", background_fit_ip);
+//			background_fit_imp.resetDisplayRange();
+//			background_fit_imp.show();
 			
-			ImagePlus amplitude_fit_imp = new ImagePlus("DEBUG: amplitude fit", amplitude_fit_ip);
-			amplitude_fit_imp.resetDisplayRange();
-			amplitude_fit_imp.show();
+//			ImagePlus amplitude_fit_imp = new ImagePlus("DEBUG: amplitude fit", amplitude_fit_ip);
+//			amplitude_fit_imp.resetDisplayRange();
+//			amplitude_fit_imp.show();
 			
 //			ImagePlus mu_fit_imp = new ImagePlus("DEBUG: mu fit", mu_fit_ip);
 //			mu_fit_imp.resetDisplayRange();
+//			mu_fit_imp.setDisplayRange(-SIGMA, SIGMA);
 //			mu_fit_imp.show();
 			
 			ImagePlus mu_squared_fit_imp = new ImagePlus("DEBUG: mu squared fit", mu_squared_fit_ip);
 			mu_squared_fit_imp.resetDisplayRange();
-			mu_squared_fit_imp.setDisplayRange(0, SIGMA);
+			mu_squared_fit_imp.setDisplayRange(0, SIGMA*SIGMA);
 			mu_squared_fit_imp.show();
 			
 			ImagePlus sigma_fit_imp = new ImagePlus("DEBUG: sigma fit", sigma_fit_ip);
@@ -988,12 +989,12 @@ public class Trace_Microtubules implements PlugIn
 //			chi_fit_imp.resetDisplayRange();
 //			chi_fit_imp.show();
 			
-			ImagePlus log_chi_squared_fit_imp = new ImagePlus("DEBUG: log chi squared fit", log_chi_squared_fit_ip);
-			log_chi_squared_fit_imp.resetDisplayRange();
-			log_chi_squared_fit_imp.show();
+//			ImagePlus log_chi_squared_fit_imp = new ImagePlus("DEBUG: log chi squared fit", log_chi_squared_fit_ip);
+//			log_chi_squared_fit_imp.resetDisplayRange();
+//			log_chi_squared_fit_imp.show();
 			
 			ImagePlus r_squared_fit_imp = new ImagePlus("DEBUG: r squared fit", r_squared_fit_ip);
-			r_squared_fit_imp.resetDisplayRange();
+			r_squared_fit_imp.setDisplayRange(0, 1);
 			r_squared_fit_imp.show();
 		}
 		
