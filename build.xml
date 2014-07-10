@@ -18,7 +18,7 @@
 	<property name="project.name" value="Trace Microtubules" />
 	<property name="vendor.name" value="Utrecht University, Netherlands" />
 	<property name="developer.name" value="Jalmar Teeuw" />
-	<property name="version" value="0.0.3" />
+	<property name="version" value="0.1.0" />
 	
 	<tstamp>
 		<format property="date.today" pattern="yyyy-MM-dd HH:mm:ss" />
