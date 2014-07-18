@@ -166,6 +166,12 @@ public class Trace_Microtubules implements PlugIn
 	public static final int DEFAULT_VALID_LINE_POINT_THRESHOLD = 1; // one or more hits
 	public static int VALID_LINE_POINT_THRESHOLD = DEFAULT_VALID_LINE_POINT_THRESHOLD;
 	
+	public static final boolean DEFAULT_SKELETONIZE_POINTS_MASK = false;
+	public static boolean SKELETONIZE_POINTS_MASK = DEFAULT_SKELETONIZE_POINTS_MASK;
+	
+	public static final boolean DEFAULT_FILTER_POINTS_MASK = true;
+	public static boolean FILTER_POINTS_MASK = DEFAULT_FILTER_POINTS_MASK;
+	
 	public static final boolean DEFAULT_USE_PRESET_USER_THRESHOLDS = false;
 	public static final double DEFAULT_UPPER_THRESHOLD = 5000.0; // RSLV: convert to percentage of histogram?
 	public static final double DEFAULT_LOWER_THRESHOLD = 1000.0; // RSLV: convert to percentage of histogram?
@@ -1128,6 +1134,37 @@ public class Trace_Microtubules implements PlugIn
 		ImageProcessor hit_count_map_ip = new ByteProcessor(image_width, image_height); // count of hits
 		ImageProcessor r_squared_sum_projection_map_ip = new FloatProcessor(image_width, image_height); // NOTE: sum of R^2 measures
 		
+		// store averaged results of eigendecomposition
+		//	[px][py][0] = lambda1_magnitude		n(t)
+		//	[px][py][1] = lambda1_direction_x	n_x(t)
+		//	[px][py][2] = lambda1_direction_y	n_y(t)
+		//	[px][py][3] = lambda2_magnitude		s(t)
+		//	[px][py][4] = lambda2_direction_x	s_x(t)
+		//	[px][py][5] = lambda2_direction_y	s_y(t)
+		//	[px][py][6] = super-resolved_x		t_x, or dlpx
+		//	[px][py][7] = super-resolved_y		t_y, or dlpy
+		double[][][] avg_results_step_3 = new double[image_width][image_height][8];
+		// RSLV: how to average n_x, n_y and s_x, s_y? Using average theta
+		
+		
+		// store Frangi measures on eigenvalues; NOTE: |L1| <= |L2|
+		// beta is control parameter, set at 0.5
+		// c dependens on image bit depth, about half maximum Hessian matrix norm
+		//	[0] = frangi L1
+		//	[1] = frangi L2
+		//	[2] = blobness (eccentricity), L1 / L2; note: keep sign!
+		//	[3] = second order structureness, RSS of all elements, or Frobius norm
+		//	[4] = vesselness = exp(-[2]^2/2*FRANGI_BETA^2)(1-exp(-[3]^2/2*FRANGI_C^2))
+		double[][][] avg_frangi_measures = new double[image_width][image_height][5];
+		// RSLV: condition |L1| <= |L2| may change by averging?
+		
+		
+		double[][][] avg_fitting_results = new double[image_width][image_height][4]; // [x][y][bg=0|amp=1|mu=2|sigma=3]
+		double[][][] avg_standard_error_fit_results = new double[image_width][image_height][4]; // [x][y][bg=0|amp=1|mu=2|sigma=3]
+		double[][] avg_chi_squared_fit_results = new double[image_width][image_height];
+		double[][] avg_r_squared_fit_results = new double[image_width][image_height];
+		
+		
 		int hit_count_max = 0; // keep track of maximum hit count
 		for(int py = 0; py < image_height; ++py)
 		{
@@ -1193,31 +1230,96 @@ public class Trace_Microtubules implements PlugIn
 							hit_count_max = cc;
 						}
 						
-						// update R^2 sum
-						double crs = r_squared_sum_projection_map_ip.getf(cpx, cpy);
-						crs += r_squared_fit_results[px][py];
-						r_squared_sum_projection_map_ip.setf(cpx, cpy, (float)crs);
+						// calculate tensor orientation, range [0..180] degree
+						double theta_n = getAngle(results_step_3[px][py][1], results_step_3[px][py][2]);
+						double theta_s = getAngle(results_step_3[px][py][4], results_step_3[px][py][5]);
+						theta_n = theta_n % 180.0;
+						theta_s = theta_s % 180.0;
+						theta_n = theta_n * (Math.PI / 180.0);
+						theta_s = theta_s * (Math.PI / 180.0);
+						
+						// update sums for averages
+						avg_results_step_3[cpx][cpy][0] += results_step_3[px][py][0];
+						avg_results_step_3[cpx][cpy][1] += Math.cos(theta_n); // RSLV: average n_x
+						avg_results_step_3[cpx][cpy][2] += Math.sin(theta_n); // RSLV: average n_y
+						avg_results_step_3[cpx][cpy][3] += results_step_3[px][py][3];
+						avg_results_step_3[cpx][cpy][4] += Math.cos(theta_s); // RSLV: average s_x
+						avg_results_step_3[cpx][cpy][5] += Math.sin(theta_s); // RSLV: average s_y
+						avg_results_step_3[cpx][cpy][6] += results_step_3[px][py][6];
+						avg_results_step_3[cpx][cpy][7] += results_step_3[px][py][7];
+						
+						avg_frangi_measures[cpx][cpy][0] = frangi_measures[px][py][0];
+						avg_frangi_measures[cpx][cpy][1] = frangi_measures[px][py][1];
+						avg_frangi_measures[cpx][cpy][2] = frangi_measures[px][py][2];
+						avg_frangi_measures[cpx][cpy][3] = frangi_measures[px][py][3];
+						avg_frangi_measures[px][py][4] = frangi_measures[px][py][4];
+						
+						avg_fitting_results[cpx][cpy][0] += fitting_results[px][py][0]; // BG
+						avg_fitting_results[cpx][cpy][1] += fitting_results[px][py][1]; // AMP
+						avg_fitting_results[cpx][cpy][2] += fitting_results[px][py][2]; // MU
+						avg_fitting_results[cpx][cpy][3] += fitting_results[px][py][3]*fitting_results[px][py][3]; // SIGMA; NOTE: average of sigma is sqrt sum of variance (sigma squared)!
+						
+						avg_standard_error_fit_results[cpx][cpy][0] += standard_error_fit_results[px][py][0];
+						avg_standard_error_fit_results[cpx][cpy][1] += standard_error_fit_results[px][py][1];
+						avg_standard_error_fit_results[cpx][cpy][2] += standard_error_fit_results[px][py][2];
+						avg_standard_error_fit_results[cpx][cpy][3] += standard_error_fit_results[px][py][3];
+						
+						avg_chi_squared_fit_results[cpx][cpy] += chi_squared_fit_results[px][py];
+						
+						avg_r_squared_fit_results[cpx][cpy] += r_squared_fit_results[px][py]; // RSLV: average R sqaured is just linear sum?
 					}
 				}
 			}
 		}
 		
 		// create average projection maps
-		ImageProcessor r_squared_avg_projection_map_ip = r_squared_sum_projection_map_ip.duplicate();
 		for(int py = 0; py < image_height; ++py)
 		{
 			for(int px = 0; px < image_width; ++px)
 			{
 				int hc = hit_count_map_ip.get(px, py);
-				if(hc != 0) // avoid division by zero
+				if(hc > 0) // just to make sure
 				{
-					 // divide sum by count to obtain average
-					r_squared_avg_projection_map_ip.setf(px, py, (float)(r_squared_avg_projection_map_ip.getf(px, py) / hc));
+					avg_results_step_3[px][py][0] /= hc;
+					avg_results_step_3[px][py][1] /= hc; // RSLV: average n_x
+					avg_results_step_3[px][py][2] /= hc; // RSLV: average n_y
+					avg_results_step_3[px][py][3] /= hc;
+					avg_results_step_3[px][py][4] /= hc; // RSLV: average s_x
+					avg_results_step_3[px][py][5] /= hc; // RSLV: average s_y
+					avg_results_step_3[px][py][6] /= hc;
+					avg_results_step_3[px][py][7] /= hc;
+					
+					avg_frangi_measures[px][py][0] /= hc;
+					avg_frangi_measures[px][py][1] /= hc;
+					avg_frangi_measures[px][py][2] /= hc;
+					avg_frangi_measures[px][py][3] /= hc;
+					avg_frangi_measures[px][py][4] /= hc;
+					
+					avg_fitting_results[px][py][0] /= hc; // BG
+					avg_fitting_results[px][py][1] /= hc; // AMP
+					avg_fitting_results[px][py][2] /= hc; // MU
+					avg_fitting_results[px][py][3] /= hc; // SIGMA; NOTE: average of sigma is sqrt sum of variance (sigma squared)!
+					avg_fitting_results[px][py][3] = Math.sqrt(avg_fitting_results[px][py][3]);
+					
+					avg_standard_error_fit_results[px][py][0] /= hc;
+					avg_standard_error_fit_results[px][py][1] /= hc;
+					avg_standard_error_fit_results[px][py][2] /= hc;
+					avg_standard_error_fit_results[px][py][3] /= hc;
+					
+					avg_chi_squared_fit_results[px][py] /= hc;
+					
+					avg_r_squared_fit_results[px][py] /= hc; // RSLV: average R sqaured is just linear sum?
 				}
-				else
-				{
-					r_squared_avg_projection_map_ip.setf(px, py, (float)0.0); // RSLV: set to zero?
-				}
+			}
+		}
+		
+		// TODO: DEBUG: show intermediate images
+		ImageProcessor r_squared_avg_projection_map_ip = new FloatProcessor(image_width, image_height);
+		for(int py = 0; py < image_height; ++py)
+		{
+			for(int px = 0; px < image_width; ++px)
+			{
+				r_squared_avg_projection_map_ip.setf(px, py, (float)avg_r_squared_fit_results[px][py]);
 			}
 		}
 		
@@ -1321,11 +1423,7 @@ public class Trace_Microtubules implements PlugIn
 			hit_count_map_imp.setDisplayRange(0, hit_count_max); //resetDisplayRange();
 			hit_count_map_imp.show();
 			
-			// show R^2 projection maps
-			ImagePlus r_squared_sum_projection_map_imp = new ImagePlus("DEBUG: r-squared sum projection map", r_squared_sum_projection_map_ip);
-			r_squared_sum_projection_map_imp.setDisplayRange(0, hit_count_max); //resetDisplayRange();
-			r_squared_sum_projection_map_imp.show();
-			
+			// show R^2 projection map
 			ImagePlus r_squared_avg_projection_map_imp = new ImagePlus("DEBUG: r-squared avg projection map", r_squared_avg_projection_map_ip);
 			r_squared_avg_projection_map_imp.setDisplayRange(0, 1); //resetDisplayRange();
 			r_squared_avg_projection_map_imp.show();
@@ -1786,14 +1884,156 @@ public class Trace_Microtubules implements PlugIn
 		ImageProcessor valid_line_points_magnitude_ip = r_squared_avg_projection_map_ip;
 		double[][][] line_points = results_step_3;
 		
+		//boolean[][] valid_line_points_mask = new boolean[image_width][image_height];
+		ImageProcessor valid_line_points_mask_ip = new ByteProcessor(image_width, image_height);
+		for(int py = 0; py < image_height; ++py)
+		{
+			for(int px = 0; px < image_width; ++px)
+			{
+				// filter pixels with less than VALID_LINE_POINT_THRESHOLD hits
+				if(hit_filled_count_ip.get(px, py) >= VALID_LINE_POINT_THRESHOLD)
+				{
+					//valid_line_points_mask[px][py] = true;
+					valid_line_points_mask_ip.set(px, py, 255);
+				}
+				else
+				{
+					//valid_line_points_mask[px][py] = false;
+					valid_line_points_mask_ip.set(px, py, 0);
+				}
+			}
+		}
+		
+		// skeletonize valid line point map
+		ImageProcessor valid_line_points_skeleton_ip = valid_line_points_mask_ip.duplicate();
+		
+		if(SKELETONIZE_POINTS_MASK)
+		{
+			valid_line_points_skeleton_ip.invert();
+			((ByteProcessor)valid_line_points_skeleton_ip).skeletonize();
+			valid_line_points_skeleton_ip.invert();
+		}
+		
+		// remove single islets
+		ImageProcessor valid_line_points_filtered_ip = valid_line_points_skeleton_ip.duplicate();
+		if(FILTER_POINTS_MASK)
+		{
+			for(int py = 0; py < image_height; ++py)
+			{
+				for(int px = 0; px < image_width; ++px)
+				{
+					if(valid_line_points_filtered_ip.get(px, py) == 255)
+					{
+						int sum = 0;
+						for(int ky = -1; ky <= 1; ++ky)
+						{
+							for(int kx = -1; kx <= 1; ++kx)
+							{
+								sum += valid_line_points_filtered_ip.getPixel(px+kx, py+ky); // NOTE: getPixel for bounds checking!
+							}
+						}
+						
+						// filter single islets
+						if(sum <= 255) // NOTE: assumes binary mask with [BG=0|FG=255]
+						{
+							valid_line_points_filtered_ip.set(px, py, 0);
+						}
+					}
+				}
+			}
+		}
+		
+		/*
+		ImageProcessor junctions_ip = new ByteProcessor(image_width, image_height);
+		for(int py = 0; py < image_height; ++py)
+		{
+			for(int px = 0; px < image_width; ++px)
+			{
+				int sum = 0;
+				for(int ky = -1; ky <= 1; ++ky)
+				{
+					for(int kx = -1; kx <= 1; ++kx)
+					{
+						sum += junctions_ip.getPixel(px+kx, py+ky); // NOTE: getPixel for bounds checking!
+					}
+				}
+				
+				if(sum >= 4*255) // NOTE: assumes binary mask with [BG=0|FG=255]
+				{
+					junctions_ip.set(px, py, 255);
+				}
+			}
+		}
+		*/
+		
+		// create final valid line point mask for line tracing
 		boolean[][] valid_line_points_mask = new boolean[image_width][image_height];
 		for(int py = 0; py < image_height; ++py)
 		{
 			for(int px = 0; px < image_width; ++px)
 			{
-				valid_line_points_mask[px][py] = hit_filled_count_ip.get(px, py) >= VALID_LINE_POINT_THRESHOLD;
+				// filter pixels with less than VALID_LINE_POINT_THRESHOLD hits
+				valid_line_points_mask[px][py] = valid_line_points_filtered_ip.get(px, py) > 0;
 			}
 		}
+		
+		// show intermediate images
+		if(DEBUG_MODE_ENABLED)
+		{
+			ImagePlus valid_line_points_mask_imp = new ImagePlus("valid line points mask", valid_line_points_mask_ip);
+			valid_line_points_mask_imp.resetDisplayRange();
+			valid_line_points_mask_imp.show();
+			
+			if(SKELETONIZE_POINTS_MASK)
+			{
+				ImagePlus valid_line_points_skeleton_imp = new ImagePlus("valid line points skeleton", valid_line_points_skeleton_ip);
+				valid_line_points_skeleton_imp.resetDisplayRange();
+				valid_line_points_skeleton_imp.show();
+			}
+			
+			if(FILTER_POINTS_MASK)
+			{
+				ImagePlus valid_line_points_filtered_imp = new ImagePlus("valid line points filtered", valid_line_points_filtered_ip);
+				valid_line_points_filtered_imp.resetDisplayRange();
+				valid_line_points_filtered_imp.show();
+			}
+			
+//			ImagePlus junctions_imp = new ImagePlus("junctions", junctions_ip);
+//			junctions_imp.resetDisplayRange();
+//			junctions_imp.show();
+			
+		}
+		
+		// start tracing lines
+		Vector<Line> lines = new Vector<Line>();
+/*		for(int py = 0; py < image_height; ++py)
+		{
+			for(int px = 0; px < image_width; ++px)
+			{
+				if(valid_line_points_mask[px][py])
+				{
+					// TODO: start tracing line in both direction
+					
+				}
+			}
+		}
+		
+		
+		
+		if(true)
+		{
+			return null;
+		}
+*/		
+		
+		
+		
+		
+		
+		
+		// ***** STEGERS LINKING ALGORITHM ******
+		
+		/*
 		// get user threshold levels (interactive)
 		if(!USE_PRESET_USER_THRESHOLDS)
 		{
@@ -1913,7 +2153,7 @@ public class Trace_Microtubules implements PlugIn
 			for(int py = 0; py < image_height; ++py)
 			{
 				// use only valid line points
-				if(Math.abs(valid_line_points_magnitude_ip.getf(px, py)) >= UPPER_THRESHOLD)
+				if(valid_line_points_mask[px][py] && Math.abs(valid_line_points_magnitude_ip.getf(px, py)) >= UPPER_THRESHOLD)
 				{
 					// create point vector
 					Vector<Double> p = new Vector<Double>(3);
@@ -1951,8 +2191,10 @@ public class Trace_Microtubules implements PlugIn
 			// get current pixel information
 			int cp_px = high_threshold_points.get(pi).get(0).intValue();
 			int cp_py = high_threshold_points.get(pi).get(1).intValue();
-			double cp_dlpx = line_points[cp_px][cp_py][6];
-			double cp_dlpy = line_points[cp_px][cp_py][7];
+			//double cp_dlpx = line_points[cp_px][cp_py][6];
+			//double cp_dlpy = line_points[cp_px][cp_py][7];
+			double cp_dlpx = line_points[cp_px][cp_py][1] * fitting_results[cp_px][cp_py][2];
+			double cp_dlpy = line_points[cp_px][cp_py][2] * fitting_results[cp_px][cp_py][2];
 			
 			// get orientation of point
 			double cp_nx = line_points[cp_px][cp_py][1];
@@ -2000,8 +2242,10 @@ public class Trace_Microtubules implements PlugIn
 				while(tracing)
 				{
 					// get information on current trace point
-					double tp_dlpx = line_points[tp_px][tp_py][6];
-					double tp_dlpy = line_points[tp_px][tp_py][7];
+					//double tp_dlpx = line_points[tp_px][tp_py][6];
+					//double tp_dlpy = line_points[tp_px][tp_py][7];
+					double tp_dlpx = line_points[tp_px][tp_py][1] * fitting_results[tp_px][tp_py][2];
+					double tp_dlpy = line_points[tp_px][tp_py][2] * fitting_results[tp_px][tp_py][2];
 					
 					// get orientation of point
 					double tp_nx = line_points[tp_px][tp_py][1];
@@ -2063,8 +2307,10 @@ public class Trace_Microtubules implements PlugIn
 						if(valid_line_points_mask[dp_px][dp_py] && Math.abs(line_points[dp_px][dp_py][0]) >= LOWER_THRESHOLD)
 						{
 							// get next neighbour information
-							double dp_dlpx = line_points[dp_px][dp_py][6];
-							double dp_dlpy = line_points[dp_px][dp_py][7];
+							//double dp_dlpx = line_points[dp_px][dp_py][6];
+							//double dp_dlpy = line_points[dp_px][dp_py][7];
+							double dp_dlpx = line_points[dp_px][dp_py][1] * fitting_results[dp_px][dp_py][2];
+							double dp_dlpy = line_points[dp_px][dp_py][2] * fitting_results[dp_px][dp_py][2];
 							
 							// get orientation of point
 							double dp_nx = line_points[dp_px][dp_py][1];
@@ -2128,8 +2374,10 @@ public class Trace_Microtubules implements PlugIn
 					System.err.println("Best neighbour at ("+np_px+","+np_py+")");
 					
 					// get next neighbour information
-					double np_dlpx = line_points[np_px][np_py][6];
-					double np_dlpy = line_points[np_px][np_py][7];
+					//double np_dlpx = line_points[np_px][np_py][6];
+					//double np_dlpy = line_points[np_px][np_py][7];
+					double np_dlpx = line_points[np_px][np_py][1] * fitting_results[np_px][np_py][2];
+					double np_dlpy = line_points[np_px][np_py][2] * fitting_results[np_px][np_py][2];
 					
 					// get orientation of point
 					double np_nx = line_points[np_px][np_py][1];
@@ -2391,6 +2639,8 @@ public class Trace_Microtubules implements PlugIn
 			processing_map_imp.show();
 		}
 		
+		*/
+		
 		// *********************************************************************
 		
 		// TODO: connect lines at/near junctions [5x5 search window]
@@ -2450,8 +2700,8 @@ public class Trace_Microtubules implements PlugIn
 		int line_color_index = 1;
 		for(Line l : lines)
 		{
-			// skip empty lines
-			if(l == null || l.size() == 0) continue;
+			// skip empty lines (RSLV: or less than 3 line points!)
+			if(l == null || l.size() < 3) continue;
 			
 			// add origin marker to overlay
 			OvalRoi origin_p = new OvalRoi(l.getFirst().px + 0.375, l.getFirst().py + 0.375, 0.25, 0.25);
@@ -2490,7 +2740,7 @@ public class Trace_Microtubules implements PlugIn
 			polyline_s.setStrokeWidth(0.0);
 			lines_overlay.add(polyline_s);
 			
-			roi_manager.addRoi(polyline_s); // RSLV: use add(imp, roi, index)
+			//roi_manager.addRoi(polyline_s); // RSLV: use add(imp, roi, index)
 			
 			++line_color_index;
 		}

@@ -142,8 +142,8 @@ public class Stegers_Algorithm implements PlugIn
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
 		gd.addNumericField("Sigma", Prefs.get("stegers.sigma", DEFAULT_SIGMA), 2);
-		gd.addNumericField("Sigma_range", Prefs.get("stegers.sigma_range", DEFAULT_SIGMA_RANGE), 2);
-		gd.addNumericField("Sigma_steps", Prefs.get("stegers.sigma_steps", DEFAULT_SIGMA_STEPS), 0);
+//		gd.addNumericField("Sigma_range", Prefs.get("stegers.sigma_range", DEFAULT_SIGMA_RANGE), 2);
+//		gd.addNumericField("Sigma_steps", Prefs.get("stegers.sigma_steps", DEFAULT_SIGMA_STEPS), 0);
 		gd.addNumericField("Linepoint_threshold", Prefs.get("stegers.linepoint_threshold", DEFAULT_LINEPOINT_THRESHOLD), 2);
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
@@ -174,7 +174,7 @@ public class Stegers_Algorithm implements PlugIn
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
-		gd.addCheckbox("Use_Weingarten_matrix", Prefs.get("stegers.weingarten_matrix", DEFAULT_USE_WEINGARTEN_MATRIX));
+//		gd.addCheckbox("Use_Weingarten_matrix", Prefs.get("stegers.weingarten_matrix", DEFAULT_USE_WEINGARTEN_MATRIX));
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
@@ -191,8 +191,8 @@ public class Stegers_Algorithm implements PlugIn
 		MODE = Mode.values()[MODE_I];
 		
 		SIGMA = gd.getNextNumber();
-		SIGMA_RANGE = gd.getNextNumber();
-		SIGMA_STEPS = (int)gd.getNextNumber();
+//		SIGMA_RANGE = gd.getNextNumber();
+//		SIGMA_STEPS = (int)gd.getNextNumber();
 		LINEPOINT_THRESHOLD = gd.getNextNumber();
 		
 		USE_PRESET_USER_THRESHOLDS = gd.getNextBoolean();
@@ -213,15 +213,15 @@ public class Stegers_Algorithm implements PlugIn
 		
 		COST_FUNCTION_WEIGHT = gd.getNextNumber();
 		
-		USE_WEINGARTEN_MATRIX = gd.getNextBoolean();
+//		USE_WEINGARTEN_MATRIX = gd.getNextBoolean();
 		
 		DEBUG_MODE_ENABLED = gd.getNextBoolean();
 		
 		// store parameters in preferences
 		Prefs.set("stegers.mode_s", MODE_S);
 		Prefs.set("stegers.sigma", SIGMA);
-		Prefs.set("stegers.sigma_range", SIGMA_RANGE);
-		Prefs.set("stegers.sigma_steps", SIGMA_STEPS);
+//		Prefs.set("stegers.sigma_range", SIGMA_RANGE);
+//		Prefs.set("stegers.sigma_steps", SIGMA_STEPS);
 		Prefs.set("stegers.linepoint_threshold", LINEPOINT_THRESHOLD);
 		Prefs.set("stegers.preset_user_thresholds", USE_PRESET_USER_THRESHOLDS);
 		Prefs.set("stegers.upper_threshold", UPPER_THRESHOLD);
@@ -235,7 +235,7 @@ public class Stegers_Algorithm implements PlugIn
 		Prefs.set("stegers.include_junctions", INCLUDE_JUNCTIONS_IN_LINE);
 		Prefs.set("stegers.include_first_processed", INCLUDE_FIRST_PROCESSED_IN_LINE);
 		Prefs.set("stegers.cost_function_weight", COST_FUNCTION_WEIGHT);
-		Prefs.set("stegers.weingarten_matrix", USE_WEINGARTEN_MATRIX);
+//		Prefs.set("stegers.weingarten_matrix", USE_WEINGARTEN_MATRIX);
 		Prefs.set("stegers.debug_mode", DEBUG_MODE_ENABLED);
 		
 		// execute filter
@@ -431,7 +431,7 @@ public class Stegers_Algorithm implements PlugIn
 		{
 			ImagePlus sigma_map_imp = new ImagePlus("Sigma map", sigma_map_ip);
 			sigma_map_imp.resetDisplayRange();
-			sigma_map_imp.show();
+//			sigma_map_imp.show();
 		}
 		
 		// *********************************************************************
@@ -493,8 +493,10 @@ public class Stegers_Algorithm implements PlugIn
 			threshold_tmp_ip.abs();
 			//threshold_tmp_ip.setMinAndMax(0, 65535);
 			threshold_tmp_ip.resetMinAndMax();
-			System.err.println("ip.getMin()="+threshold_tmp_ip.getMin());
-			System.err.println("ip.getMax()="+threshold_tmp_ip.getMax());
+			double threshold_tmp_ip_min = threshold_tmp_ip.getMin();
+			double threshold_tmp_ip_max = threshold_tmp_ip.getMax();
+			System.err.println("ip.getMin()="+threshold_tmp_ip_min);
+			System.err.println("ip.getMax()="+threshold_tmp_ip_max);
 			final double threshold_map_scale_factor = threshold_tmp_ip.getMax() / 256;
 			final ImageProcessor threshold_ip = threshold_tmp_ip.convertToByteProcessor(); // final to make accessible in anonymous inner class
 			final ImagePlus threshold_imp = new ImagePlus("Threshold map", threshold_ip); // final to make accessible in anonymous inner class
@@ -502,9 +504,10 @@ public class Stegers_Algorithm implements PlugIn
 			threshold_imp.show();
 			
 			GenericDialog thresholds_gd = new GenericDialog("User threshold levels"); // RSLV: make NonBlockingGenericDialog();
-			int max_intensity_value = (int)Math.pow(2, ip.getBitDepth())-1;
-			thresholds_gd.addSlider("Upper threshold", 0, max_intensity_value, UPPER_THRESHOLD); // RSLV: limit?
-			thresholds_gd.addSlider("Lower threshold", 0, max_intensity_value, LOWER_THRESHOLD); // RSLV: limit?
+			double min_intensity_value = threshold_tmp_ip_min; // 0
+			double max_intensity_value = threshold_tmp_ip_max; //(int)Math.pow(2, ip.getBitDepth())-1;
+			thresholds_gd.addSlider("Upper threshold", min_intensity_value, max_intensity_value, UPPER_THRESHOLD); // RSLV: limit?
+			thresholds_gd.addSlider("Lower threshold", min_intensity_value, max_intensity_value, LOWER_THRESHOLD); // RSLV: limit?
 			
 			DialogListener dlg_listener = new DialogListener(){
 				@Override
