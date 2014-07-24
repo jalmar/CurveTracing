@@ -2003,6 +2003,82 @@ public class Trace_Microtubules implements PlugIn
 							
 							// trace path along centerline pixels
 							boolean tracing = true;
+							double STEP_SIZE = 0.1;
+							
+							while(tracing && trace_length < MAX_TRACE_LENGTH)
+							{
+								// get second eigenvector of pixel
+								int cx = (int)tx;
+								int cy = (int)ty;
+								double sx = hessian_results_tmp[cx][cy][4]; // TODO: solve ArrayIndexOutOfBounds when running off the image!
+								double sy = hessian_results_tmp[cx][cy][5]; // TODO: solve ArrayIndexOutOfBounds when running off the image!
+								double sa = Math.atan2(sy, sx);
+								double asa = Math.abs(sa);
+								
+								// get linear interpolated vector field
+								double isa = 0.0;
+								double wsa = 0;
+								for(int kx = -1; kx <= 1; ++kx)
+								{
+									for(int ky = -1; ky <= 1; ++ky)
+									{
+										// get neighbour pixel
+										int nx = cx + kx;
+										int ny = cy + ky;
+										if(nx < 0 || nx >= ip_tmp.getWidth() || ny < 0 || ny >= ip_tmp.getHeight())
+										{
+											continue; // skip out of image
+										}
+										
+										// get neighbour distance
+										double dx = tx - (nx+0.5);
+										double dy = ty - (ny+0.5);
+										if(Math.abs(dx) >= 1.0 || Math.abs(dy) >= 1.0)
+										{
+											continue; // skip out of range
+										}
+										
+										// get neighbour information
+										double nsx = hessian_results_tmp[nx][ny][4];
+										double nsy = hessian_results_tmp[nx][ny][5];
+										double nsa = Math.atan2(nsy, nsx);
+										double ansa = Math.abs(nsa);
+										
+										// add sum to interpolated value
+										double idx = 1.0 - dx;
+										double idy = 1.0 - dy;
+										double w = Math.sqrt(idx*idx+idy*idy);
+										
+										// add to sum
+										isa += w * ansa;
+										wsa += w;
+									}
+								}
+								isa /= wsa;
+								
+								// take step in interpolated direction
+								tx += STEP_SIZE * Math.cos(isa);
+								ty += STEP_SIZE * Math.sin(isa);
+								
+								if(tx >= 0 && tx < ip_tmp.getWidth() && ty >= 0 && ty < ip_tmp.getHeight())
+								{
+									// add point to line
+									trace_xs_vec.add(tx);
+									trace_ys_vec.add(ty);
+									
+									// increase trace length
+									trace_length += STEP_SIZE;
+								}
+								else
+								{
+									// stop tracing (outside image window)
+									System.err.println("Stop tracing line, outside image window");
+									tracing = false;
+								}
+							}
+							
+							/*
+							boolean tracing = true;
 							while(tracing && trace_length < MAX_TRACE_LENGTH)
 							{
 								// get second eigenvector of pixel
@@ -2081,8 +2157,11 @@ public class Trace_Microtubules implements PlugIn
 								
 								trace_length += 1; // DEBUG; TODO: remove
 							}
+							*/
 							
 							// TODO: opposite direction
+							
+							// -------------------------------------------------
 							
 							// manually convert Float collection to array of floats
 							float[] trace_xs = new float[trace_xs_vec.size()];
