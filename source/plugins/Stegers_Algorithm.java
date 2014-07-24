@@ -117,6 +117,14 @@ public class Stegers_Algorithm implements PlugIn
 	
 	public static boolean DEBUG_MODE_ENABLED = DEFAULT_DEBUG_MODE_ENABLED;
 	
+	public static final boolean DEFAULT_ENABLE_LINKING = true;
+	
+	public static boolean ENABLE_LINKING = DEFAULT_ENABLE_LINKING;
+	
+	public static final double DEFAULT_MAX_BENDING_ANGLE = 30.0;
+	
+	public static double MAX_BENDING_ANGLE = DEFAULT_MAX_BENDING_ANGLE;
+	
 	// ////////////////////////////////////////////////////////////////////////
 	
 	/**
@@ -180,6 +188,9 @@ public class Stegers_Algorithm implements PlugIn
 		
 		gd.addCheckbox("Enable_debug_mode", Prefs.get("stegers.debug_mode", DEFAULT_DEBUG_MODE_ENABLED));
 		
+		gd.addCheckbox("Enable_linking", Prefs.get("stegers.enable_linking", DEFAULT_ENABLE_LINKING));
+		gd.addNumericField("Max_bending_angle", Prefs.get("stegers.max_bending_angle", DEFAULT_MAX_BENDING_ANGLE), 0);
+		
 		gd.setOKLabel("Trace");
 		
 		gd.showDialog();
@@ -217,6 +228,10 @@ public class Stegers_Algorithm implements PlugIn
 		
 		DEBUG_MODE_ENABLED = gd.getNextBoolean();
 		
+		ENABLE_LINKING = gd.getNextBoolean();
+		
+		MAX_BENDING_ANGLE = gd.getNextNumber();
+		
 		// store parameters in preferences
 		Prefs.set("stegers.mode_s", MODE_S);
 		Prefs.set("stegers.sigma", SIGMA);
@@ -237,6 +252,10 @@ public class Stegers_Algorithm implements PlugIn
 		Prefs.set("stegers.cost_function_weight", COST_FUNCTION_WEIGHT);
 //		Prefs.set("stegers.weingarten_matrix", USE_WEINGARTEN_MATRIX);
 		Prefs.set("stegers.debug_mode", DEBUG_MODE_ENABLED);
+		Prefs.set("stegers.enable_linking", ENABLE_LINKING);
+		Prefs.set("stegers.max_bending_angle", MAX_BENDING_ANGLE);
+		
+		MAX_BENDING_ANGLE = Math.toRadians(MAX_BENDING_ANGLE);
 		
 		// execute filter
 		exec(imp, SIGMA, LINEPOINT_THRESHOLD);
@@ -787,6 +806,13 @@ public class Stegers_Algorithm implements PlugIn
 								System.err.println("corrected dtheta="+dtheta);
 							}
 							dtheta *= Math.PI / 180.0; // deg to rad
+							
+							if(dtheta > MAX_BENDING_ANGLE)
+							{
+								System.err.println("  Exceeding maximum bending angle, skipping point");
+								continue;
+							}
+							
 							double cost = ddist + COST_FUNCTION_WEIGHT * dtheta;
 							
 							System.err.println("  cost=" + ddist + "+" +  COST_FUNCTION_WEIGHT + "*" + dtheta + "=" + cost);
@@ -978,7 +1004,7 @@ public class Stegers_Algorithm implements PlugIn
 						}
 						else
 						{
-							if(jp_pos <= SPLINTER_FRAGMENT_THRESHOLD || (line_a.size() - jp_pos) <= SPLINTER_FRAGMENT_THRESHOLD)
+							if(PREVENT_SPLINTER_FRAGMENTS && (jp_pos <= SPLINTER_FRAGMENT_THRESHOLD || (line_a.size() - jp_pos) <= SPLINTER_FRAGMENT_THRESHOLD))
 							{
 								System.err.println("Not splitting line to avoid fragmentation");
 							}
@@ -1063,7 +1089,7 @@ public class Stegers_Algorithm implements PlugIn
 			}
 			
 			// prevent small fragments
-			if(line.size() <= SPLINTER_FRAGMENT_THRESHOLD)
+			if(PREVENT_SPLINTER_FRAGMENTS && line.size() <= SPLINTER_FRAGMENT_THRESHOLD)
 			{
 				System.err.println("Rejecting small line fragment");
 				lines.remove(line);
@@ -1087,7 +1113,7 @@ public class Stegers_Algorithm implements PlugIn
 		
 		// *********************************************************************
 		
-		// TODO: connect lines at/near junctions [5x5 search window]
+		// RSLV: connect lines at/near junctions [5x5 search window]
 		
 		// *********************************************************************
 		
@@ -1098,6 +1124,328 @@ public class Stegers_Algorithm implements PlugIn
 		//      if another lines endpoint is within reach
 		//         connect these two lines together
 		//         option: smooth out connection (i.e. drop first couple of points from endpoint)
+		if(ENABLE_LINKING)
+		{
+		double SEARCH_DISTANCE = 2*Math.ceil(6*SIGMA); // pixels
+		int BACKTRACK = 3; // number of point to backtrack
+		boolean updated = true;
+		ImageProcessor window_overlay_ip = ip.duplicate();
+		Overlay window_overlay = new Overlay(); // TMP: DEBUG
+		while(updated)
+		{
+			updated = false;
+			
+			// for each line
+			for(int i = 0; i < lines.size(); ++i)
+			{
+				// get line
+				Line l = lines.get(i);
+				
+				// skip if less than some size
+				if(l.size() < 5) continue;
+				
+				// TODO: remove last couple (1, 3, maybe 5?) of line point?
+				
+				// for both end points
+				int wx1 = l.get(BACKTRACK).px;
+				int wy1 = l.get(BACKTRACK).py;
+				double wsx1 = l.get(BACKTRACK).sx;
+				double wsy1 = l.get(BACKTRACK).sx;
+				int wdx1 = l.get(0+BACKTRACK).px - l.get(1+BACKTRACK).px;
+				int wdy1 = l.get(0+BACKTRACK).py - l.get(1+BACKTRACK).py;
+				double wdsx1 = (l.get(0+BACKTRACK).px + l.get(0+BACKTRACK).sx) - (l.get(1+BACKTRACK).px + l.get(1+BACKTRACK).sx);
+				double wdsy1 = (l.get(0+BACKTRACK).py + l.get(0+BACKTRACK).sy) - (l.get(1+BACKTRACK).py + l.get(1+BACKTRACK).sy);
+				double wsa1 = Math.atan2(wdsy1, wdsx1);
+				
+				int wx2 = l.get(l.size()-BACKTRACK-1).px;
+				int wy2 = l.get(l.size()-BACKTRACK-1).py;
+				double wsx2 = l.get(l.size()-BACKTRACK-1).sx;
+				double wsy2 = l.get(l.size()-BACKTRACK-1).sy;
+				int wdx2 = l.get(l.size()-BACKTRACK-1).px - l.get(l.size()-BACKTRACK-2).px;
+				int wdy2 = l.get(l.size()-BACKTRACK-1).py - l.get(l.size()-BACKTRACK-2).py;
+				double wdsx2 = (l.get(l.size()-BACKTRACK-1).px + l.get(l.size()-BACKTRACK-1).sx) - (l.get(l.size()-BACKTRACK-2).px + l.get(l.size()-BACKTRACK-2).sx);
+				double wdsy2 = (l.get(l.size()-BACKTRACK-1).py + l.get(l.size()-BACKTRACK-1).sy) - (l.get(l.size()-BACKTRACK-2).py + l.get(l.size()-BACKTRACK-2).sy);
+				double wsa2 = Math.atan2(wdsy2, wdsx2);
+				
+				// TODO: estimate peristence length
+				// TODO: adjust search window accordingly
+				
+				// define search window
+				int wtlx1 = wx1 + (int)(-0.5*SEARCH_DISTANCE + wdx1*0.5*SEARCH_DISTANCE);
+				int wtly1 = wy1 + (int)(-0.5*SEARCH_DISTANCE + wdy1*0.5*SEARCH_DISTANCE);
+				//int wbrx1 = (int)(0.5*SEARCH_DISTANCE + wdx1*0.5*SEARCH_DISTANCE);
+				//int wbry1 = (int)(0.5*SEARCH_DISTANCE + wdy1*0.5*SEARCH_DISTANCE);
+				
+				int wtlx2 = wx2 + (int)(-0.5*SEARCH_DISTANCE + wdx2*0.5*SEARCH_DISTANCE);
+				int wtly2 = wy2 + (int)(-0.5*SEARCH_DISTANCE + wdy2*0.5*SEARCH_DISTANCE);
+				//int wbrx2 = wx2 + (int)(0.5*SEARCH_DISTANCE + wdx2*0.5*SEARCH_DISTANCE);
+				//int wbry2 = wy2 + (int)(0.5*SEARCH_DISTANCE + wdy2*0.5*SEARCH_DISTANCE);
+				
+				// DEBUG: draw search windows in overlay
+				Roi w1 = new Roi(wtlx1, wtly1, SEARCH_DISTANCE, SEARCH_DISTANCE);
+				w1.setStrokeWidth(0.0);
+				w1.setStrokeColor(Color.YELLOW);
+				w1.setPosition(1);
+				window_overlay.add(w1);
+				
+				Roi w2 = new Roi(wtlx2, wtly2, SEARCH_DISTANCE, SEARCH_DISTANCE);
+				w2.setStrokeWidth(0.0);
+				w2.setStrokeColor(Color.ORANGE);
+				w2.setPosition(1);
+				window_overlay.add(w2);
+				
+				// find matching lines
+				Vector<Line> lmatches = new Vector<Line>();
+				Vector<Integer> wmatches = new Vector<Integer>();
+				Vector<Integer> pmatches = new Vector<Integer>();
+				
+				// try to match to all lines
+				for(int j = 0; j < lines.size(); ++j) // RSLV: i+1 may be safer option?
+				{
+					// skip self
+					if(j == i) continue;
+					
+					// get other line
+					Line ol = lines.get(j);
+					
+					// again, skip if less than some size
+					if(ol.size() < 2) continue;
+					
+					// get coordinates of points
+					int olx1 = ol.get(0+BACKTRACK).px;
+					int oly1 = ol.get(0+BACKTRACK).py;
+					int olx2 = ol.get(ol.size()-BACKTRACK-1).px;
+					int oly2 = ol.get(ol.size()-BACKTRACK-1).py;
+					
+					// find a match
+					if(olx1 >= wtlx1 && olx1 <= wtlx1+SEARCH_DISTANCE && oly1 >= wtly1 && oly1 <= wtly1+SEARCH_DISTANCE)
+					{
+						System.err.println("found match between W1 and OL1");
+						lmatches.add(ol);
+						wmatches.add(new Integer(1));
+						pmatches.add(new Integer(1));
+					}
+					if(olx1 >= wtlx2 && olx1 <= wtlx2+SEARCH_DISTANCE && oly1 >= wtly2 && oly1 <= wtly2+SEARCH_DISTANCE)
+					{
+						System.err.println("found match between W2 and OL1");
+						lmatches.add(ol);
+						wmatches.add(new Integer(2));
+						pmatches.add(new Integer(1));
+					}
+					if(olx2 >= wtlx1 && olx2 <= wtlx1+SEARCH_DISTANCE && oly2 >= wtly1 && oly2 <= wtly1+SEARCH_DISTANCE)
+					{
+						System.err.println("found match between W1 and OL2");
+						lmatches.add(ol);
+						wmatches.add(new Integer(1));
+						pmatches.add(new Integer(2));
+					}
+					if(olx2 >= wtlx2 && olx2 <= wtlx2+SEARCH_DISTANCE && oly2 >= wtly2 && oly2 <= wtly2+SEARCH_DISTANCE)
+					{
+						System.err.println("found match between W2 and OL2");
+						lmatches.add(ol);
+						wmatches.add(new Integer(2));
+						pmatches.add(new Integer(2));
+					}
+				}
+				
+				// find best matching line
+				double best_matching_cost = Double.MAX_VALUE;
+				int best_matching_index = -1;
+				for(int k = 0; k < lmatches.size(); ++k)
+				{
+					// get details on match
+					Line best_line = lmatches.get(k);
+					int best_window = wmatches.get(k);
+					int best_point = pmatches.get(k);
+					
+					// calculate matching cost
+					double diff_distance = Double.MAX_VALUE;
+					double diff_angle = Math.PI;
+					
+//				// TMP: copy
+//				int wx1 = l.getFirst().px;
+//				int wy1 = l.getFirst().py;
+//				double wsx1 = l.getFirst().sx;
+//				double wsy1 = l.getFirst().sx;
+//				int wdx1 = l.get(1).px - l.get(2).px;
+//				int wdy1 = l.get(1).py - l.get(2).py;
+//				double wdsx1 = (l.get(1).px + l.get(1).sx) - (l.get(2).px + l.get(2).sx);
+//				double wdsy1 = (l.get(1).py + l.get(1).sy) - (l.get(2).py + l.get(2).sy);
+//				double wsa1 = Math.atan2(wdsy1, wdsx1);
+					
+					if(best_window == 1 && best_point == 1)
+					{
+						// calculate distance difference
+						double dspx = (wx1 + wsx1) - (best_line.get(0+BACKTRACK).px + best_line.get(0+BACKTRACK).sx);
+						double dspy = (wy1 + wsy1) - (best_line.get(0+BACKTRACK).py + best_line.get(0+BACKTRACK).sy);
+						
+						diff_distance = Math.sqrt(dspx*dspx+dspy*dspy);
+						
+						// calculate angle difference
+						double ddsx = (best_line.get(0+BACKTRACK).px + best_line.get(0+BACKTRACK).sx) - (best_line.get(1+BACKTRACK).px + best_line.get(1+BACKTRACK).sx);
+						double ddsy = (best_line.get(0+BACKTRACK).py + best_line.get(0+BACKTRACK).sy) - (best_line.get(1+BACKTRACK).py + best_line.get(1+BACKTRACK).sy);
+						double dwsa = Math.atan2(ddsy, ddsx);
+						
+						System.err.println("wsa1 = " + wsa1*180/Math.PI);
+						System.err.println("dwsa = " + dwsa*180/Math.PI);
+						diff_angle = Math.abs(wsa1 - dwsa);
+						System.err.println("diff_angle = " + diff_angle*180/Math.PI);
+						if(diff_angle > Math.PI)
+						{
+							diff_angle = (2*Math.PI) - diff_angle;
+							System.err.println("new diff_angle = " + diff_angle*180/Math.PI);
+						}
+						diff_angle = Math.PI - diff_angle; // flip
+					}
+					else if(best_window == 1 && best_point == 2)
+					{
+						// calculate distance difference
+						double dspx = (wx1 + wsx1) - (best_line.get(best_line.size()-BACKTRACK-1).px + best_line.get(best_line.size()-BACKTRACK-1).sx);
+						double dspy = (wy1 + wsy1) - (best_line.get(best_line.size()-BACKTRACK-1).py + best_line.get(best_line.size()-BACKTRACK-1).sy);
+						
+						diff_distance = Math.sqrt(dspx*dspx+dspy*dspy);
+						
+						// calculate angle difference
+						double ddsx = (best_line.get(best_line.size()-BACKTRACK-1).px + best_line.get(best_line.size()-BACKTRACK-1).sx) - (best_line.get(best_line.size()-BACKTRACK-2).px + best_line.get(best_line.size()-BACKTRACK-2).sx);
+						double ddsy = (best_line.get(best_line.size()-BACKTRACK-1).py + best_line.get(best_line.size()-BACKTRACK-1).sy) - (best_line.get(best_line.size()-BACKTRACK-2).py + best_line.get(best_line.size()-BACKTRACK-2).sy);
+						double dwsa = Math.atan2(ddsy, ddsx);
+						
+						System.err.println("wsa1 = " + wsa1*180/Math.PI);
+						System.err.println("dwsa = " + dwsa*180/Math.PI);
+						diff_angle = Math.abs(wsa1 - dwsa);
+						System.err.println("diff_angle = " + diff_angle*180/Math.PI);
+						if(diff_angle > Math.PI)
+						{
+							diff_angle = (2*Math.PI) - diff_angle;
+							System.err.println("new diff_angle = " + diff_angle*180/Math.PI);
+						}
+						diff_angle = Math.PI - diff_angle; // flip
+					}
+					else if(best_window == 2 && best_point == 1)
+					{
+						// calculate distance difference
+						double dspx = (wx2 + wsx2) - (best_line.get(0+BACKTRACK).px + best_line.get(0+BACKTRACK).sx);
+						double dspy = (wy2 + wsy2) - (best_line.get(0+BACKTRACK).py + best_line.get(0+BACKTRACK).sy);
+						
+						diff_distance = Math.sqrt(dspx*dspx+dspy*dspy);
+						
+						// calculate angle difference
+						double ddsx = (best_line.get(0+BACKTRACK).px + best_line.get(0+BACKTRACK).sx) - (best_line.get(1+BACKTRACK).px + best_line.get(1+BACKTRACK).sx);
+						double ddsy = (best_line.get(0+BACKTRACK).py + best_line.get(0+BACKTRACK).sy) - (best_line.get(1+BACKTRACK).py + best_line.get(1+BACKTRACK).sy);
+						double dwsa = Math.atan2(ddsy, ddsx);
+						
+						System.err.println("wsa2 = " + wsa2*180/Math.PI);
+						System.err.println("dwsa = " + dwsa*180/Math.PI);
+						diff_angle = Math.abs(wsa2 - dwsa);
+						System.err.println("diff_angle = " + diff_angle*180/Math.PI);
+						if(diff_angle > Math.PI)
+						{
+							diff_angle = (2*Math.PI) - diff_angle;
+							System.err.println("new diff_angle = " + diff_angle*180/Math.PI);
+						}
+						diff_angle = Math.PI - diff_angle; // flip
+					}
+					else if(best_window == 2 && best_point == 2)
+					{
+						// calculate distance difference
+						double dspx = (wx2 + wsx2) - (best_line.get(best_line.size()-BACKTRACK-1).px + best_line.get(best_line.size()-BACKTRACK-1).sx);
+						double dspy = (wy2 + wsy2) - (best_line.get(best_line.size()-BACKTRACK-1).py + best_line.get(best_line.size()-BACKTRACK-1).sy);
+						
+						diff_distance = Math.sqrt(dspx*dspx+dspy*dspy);
+						
+						// calculate angle difference
+						double ddsx = (best_line.get(best_line.size()-BACKTRACK-1).px + best_line.get(best_line.size()-BACKTRACK-1).sx) - (best_line.get(best_line.size()-BACKTRACK-2).px + best_line.get(best_line.size()-BACKTRACK-2).sx);
+						double ddsy = (best_line.get(best_line.size()-BACKTRACK-1).py + best_line.get(best_line.size()-BACKTRACK-1).sy) - (best_line.get(best_line.size()-BACKTRACK-2).py + best_line.get(best_line.size()-BACKTRACK-2).sy);
+						double dwsa = Math.atan2(ddsy, ddsx);
+						
+						System.err.println("wsa2 = " + wsa2*180/Math.PI);
+						System.err.println("dwsa = " + dwsa*180/Math.PI);
+						diff_angle = Math.abs(wsa2 - dwsa);
+						System.err.println("diff_angle = " + diff_angle*180/Math.PI);
+						if(diff_angle > Math.PI)
+						{
+							diff_angle = (2*Math.PI) - diff_angle;
+							System.err.println("new diff_angle = " + diff_angle*180/Math.PI);
+						}
+						diff_angle = Math.PI - diff_angle; // flip
+					}
+					
+					/*if(diff_angle > MAX_BENDING_ANGLE)
+					{
+						continue; // skip match
+					}*/
+					
+					double matching_cost = diff_angle;//diff_distance+COST_FUNCTION_WEIGHT*diff_angle; // TODO: define cost function based on distance and orientation
+					
+					// check for better match
+					if(matching_cost < best_matching_cost)
+					{
+						best_matching_cost = matching_cost;
+						best_matching_index = k;
+					}
+				}
+				
+				// check if match found
+				if(best_matching_index != -1)
+				{
+					// link lines together
+					System.err.println("best match found between W" + wmatches.get(best_matching_index) + " and OL" + pmatches.get(best_matching_index));
+					
+					// get details on match
+					Line best_line = lmatches.get(best_matching_index);
+					int best_window = wmatches.get(best_matching_index);
+					int best_point = pmatches.get(best_matching_index);
+					
+					// get both lines
+					Line l1 = l; // lines.get(i);
+					Line l2 = best_line;
+					
+					// check how to merge
+					if(best_window == 1 && best_point == 1)
+					{
+						for(int k = 0; k < l2.size(); ++k)
+						{
+							l1.addFirst(l2.get(k)); // RSLV: backtrack?
+						}
+					}
+					else if(best_window == 1 && best_point == 2)
+					{
+						for(int k = l2.size()-1; k >= 0; --k)
+						{
+							l1.addFirst(l2.get(k)); // RSLV: backtrack?
+						}
+					}
+					else if(best_window == 2 && best_point == 1)
+					{
+						for(int k = 0; k < l2.size(); ++k)
+						{
+							l1.addLast(l2.get(k)); // RSLV: backtrack?
+						}
+					}
+					else if(best_window == 2 && best_point == 2)
+					{
+						for(int k = l2.size()-1; k >= 0; --k)
+						{
+							l1.addLast(l2.get(k)); // RSLV: backtrack?
+						}
+					}
+					
+					// remove second line from list
+					lines.remove(l2);
+					
+					// set status to updated
+					updated = true;
+					
+					// check again for self (continue merging consequtive line pieces) NOTE: not very neat programming, I know :|
+					--i;
+				}
+			}
+		}
+		ImagePlus window_overlay_imp = new ImagePlus("Search windows", window_overlay_ip);
+		window_overlay_imp.setOverlay(window_overlay); // TMP: DEBUG
+		//window_overlay_imp.updateAndRepaintWindow();
+		window_overlay_imp.show();
+		}
 		
 		// *********************************************************************
 		
