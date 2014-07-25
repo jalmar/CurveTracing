@@ -1126,15 +1126,11 @@ public class Stegers_Algorithm implements PlugIn
 		//         option: smooth out connection (i.e. drop first couple of points from endpoint)
 		if(ENABLE_LINKING)
 		{
-		double SEARCH_DISTANCE = 2*Math.ceil(6*SIGMA); // pixels
-		int BACKTRACK = 3; // number of point to backtrack
-		boolean updated = true;
-		ImageProcessor window_overlay_ip = ip.duplicate();
-		Overlay window_overlay = new Overlay(); // TMP: DEBUG
-		while(updated)
-		{
-			updated = false;
-			
+			double SEARCH_DISTANCE = 2*Math.ceil(6*SIGMA); // pixels
+			int BACKTRACK = 3; // number of point to backtrack
+			int AVERAGE_LENGTH = 10;
+			ImageProcessor search_window_overlay_ip = ip.duplicate();
+			Overlay search_window_overlay = new Overlay(); // TMP: DEBUG
 			// for each line
 			for(int i = 0; i < lines.size(); ++i)
 			{
@@ -1142,19 +1138,19 @@ public class Stegers_Algorithm implements PlugIn
 				Line l = lines.get(i);
 				
 				// skip if less than some size
-				if(l.size() < 5) continue;
+				if(l.size() < 2+AVERAGE_LENGTH+2*BACKTRACK) continue;
 				
 				// TODO: remove last couple (1, 3, maybe 5?) of line point?
 				
 				// for both end points
-				int wx1 = l.get(BACKTRACK).px;
-				int wy1 = l.get(BACKTRACK).py;
-				double wsx1 = l.get(BACKTRACK).sx;
-				double wsy1 = l.get(BACKTRACK).sx;
+				int wx1 = l.get(0+BACKTRACK).px;
+				int wy1 = l.get(0+BACKTRACK).py;
+				double wsx1 = l.get(0+BACKTRACK).sx;
+				double wsy1 = l.get(0+BACKTRACK).sx;
 				int wdx1 = l.get(0+BACKTRACK).px - l.get(1+BACKTRACK).px;
 				int wdy1 = l.get(0+BACKTRACK).py - l.get(1+BACKTRACK).py;
-				double wdsx1 = (l.get(0+BACKTRACK).px + l.get(0+BACKTRACK).sx) - (l.get(1+BACKTRACK).px + l.get(1+BACKTRACK).sx);
-				double wdsy1 = (l.get(0+BACKTRACK).py + l.get(0+BACKTRACK).sy) - (l.get(1+BACKTRACK).py + l.get(1+BACKTRACK).sy);
+				double wdsx1 = (l.get(0+BACKTRACK).px + l.get(0+BACKTRACK).sx) - (l.get(1+BACKTRACK+AVERAGE_LENGTH).px + l.get(1+BACKTRACK+AVERAGE_LENGTH).sx);
+				double wdsy1 = (l.get(0+BACKTRACK).py + l.get(0+BACKTRACK).sy) - (l.get(1+BACKTRACK+AVERAGE_LENGTH).py + l.get(1+BACKTRACK+AVERAGE_LENGTH).sy);
 				double wsa1 = Math.atan2(wdsy1, wdsx1);
 				
 				int wx2 = l.get(l.size()-BACKTRACK-1).px;
@@ -1163,37 +1159,145 @@ public class Stegers_Algorithm implements PlugIn
 				double wsy2 = l.get(l.size()-BACKTRACK-1).sy;
 				int wdx2 = l.get(l.size()-BACKTRACK-1).px - l.get(l.size()-BACKTRACK-2).px;
 				int wdy2 = l.get(l.size()-BACKTRACK-1).py - l.get(l.size()-BACKTRACK-2).py;
-				double wdsx2 = (l.get(l.size()-BACKTRACK-1).px + l.get(l.size()-BACKTRACK-1).sx) - (l.get(l.size()-BACKTRACK-2).px + l.get(l.size()-BACKTRACK-2).sx);
-				double wdsy2 = (l.get(l.size()-BACKTRACK-1).py + l.get(l.size()-BACKTRACK-1).sy) - (l.get(l.size()-BACKTRACK-2).py + l.get(l.size()-BACKTRACK-2).sy);
+				double wdsx2 = (l.get(l.size()-BACKTRACK-1).px + l.get(l.size()-BACKTRACK-1).sx) - (l.get(l.size()-BACKTRACK-AVERAGE_LENGTH-2).px + l.get(l.size()-BACKTRACK-AVERAGE_LENGTH-2).sx);
+				double wdsy2 = (l.get(l.size()-BACKTRACK-1).py + l.get(l.size()-BACKTRACK-1).sy) - (l.get(l.size()-BACKTRACK-AVERAGE_LENGTH-2).py + l.get(l.size()-BACKTRACK-AVERAGE_LENGTH-2).sy);
 				double wsa2 = Math.atan2(wdsy2, wdsx2);
 				
 				// TODO: estimate peristence length
 				// TODO: adjust search window accordingly
 				
 				// define search window
-				int wtlx1 = wx1 + (int)(-0.5*SEARCH_DISTANCE + wdx1*0.5*SEARCH_DISTANCE);
-				int wtly1 = wy1 + (int)(-0.5*SEARCH_DISTANCE + wdy1*0.5*SEARCH_DISTANCE);
+				double wtlx1 = wx1 +Math.cos(wsa1-Math.PI/2)*0.5*0.5*SEARCH_DISTANCE;
+				double wtly1 = wy1 + Math.sin(wsa1-Math.PI/2)*0.5*0.5*SEARCH_DISTANCE;
+				double wtrx1 = wx1 + Math.cos(wsa1+Math.PI/2)*0.5*0.5*SEARCH_DISTANCE;
+				double wtry1 = wy1 + Math.sin(wsa1+Math.PI/2)*0.5*0.5*SEARCH_DISTANCE;
+				
+				//int wtlx1 = wx1 + (int)(-0.5*SEARCH_DISTANCE + wdx1*0.5*SEARCH_DISTANCE);
+				//int wtly1 = wy1 + (int)(-0.5*SEARCH_DISTANCE + wdy1*0.5*SEARCH_DISTANCE);
 				//int wbrx1 = (int)(0.5*SEARCH_DISTANCE + wdx1*0.5*SEARCH_DISTANCE);
 				//int wbry1 = (int)(0.5*SEARCH_DISTANCE + wdy1*0.5*SEARCH_DISTANCE);
 				
-				int wtlx2 = wx2 + (int)(-0.5*SEARCH_DISTANCE + wdx2*0.5*SEARCH_DISTANCE);
-				int wtly2 = wy2 + (int)(-0.5*SEARCH_DISTANCE + wdy2*0.5*SEARCH_DISTANCE);
+				double wtlx2 = wx2 + Math.cos(wsa2-Math.PI/2)*0.5*0.5*SEARCH_DISTANCE;
+				double wtly2 = wy2 + Math.sin(wsa2-Math.PI/2)*0.5*0.5*SEARCH_DISTANCE;
+				double wtrx2 = wx2 + Math.cos(wsa2+Math.PI/2)*0.5*0.5*SEARCH_DISTANCE;
+				double wtry2 = wy2 + Math.sin(wsa2+Math.PI/2)*0.5*0.5*SEARCH_DISTANCE;
+				//int wtlx2 = wx2 + (int)(-0.5*SEARCH_DISTANCE + wdx2*0.5*SEARCH_DISTANCE);
+				//int wtly2 = wy2 + (int)(-0.5*SEARCH_DISTANCE + wdy2*0.5*SEARCH_DISTANCE);
 				//int wbrx2 = wx2 + (int)(0.5*SEARCH_DISTANCE + wdx2*0.5*SEARCH_DISTANCE);
 				//int wbry2 = wy2 + (int)(0.5*SEARCH_DISTANCE + wdy2*0.5*SEARCH_DISTANCE);
 				
 				// DEBUG: draw search windows in overlay
-				Roi w1 = new Roi(wtlx1, wtly1, SEARCH_DISTANCE, SEARCH_DISTANCE);
+				Roi w1 = new PolygonRoi(new float[]{(float)wtlx1, (float)(wtlx1+Math.cos(wsa1)*SEARCH_DISTANCE), (float)(wtrx1+Math.cos(wsa1)*SEARCH_DISTANCE), (float)wtrx1}, new float[]{(float)wtly1, (float)(wtly1+Math.sin(wsa1)*SEARCH_DISTANCE), (float)(wtry1+Math.sin(wsa1)*SEARCH_DISTANCE), (float)wtry1}, PolygonRoi.POLYGON);
+				//Roi w1 = new Roi(wtlx1, wtly1, SEARCH_DISTANCE, SEARCH_DISTANCE);
 				w1.setStrokeWidth(0.0);
 				w1.setStrokeColor(Color.YELLOW);
 				w1.setPosition(1);
-				window_overlay.add(w1);
+				search_window_overlay.add(w1);
+				Roi w1c = new PolygonRoi(new float[]{(float)wtlx1, (float)(wtlx1+Math.cos(wsa1)*1), (float)(wtrx1+Math.cos(wsa1)*1), (float)wtrx1}, new float[]{(float)wtly1, (float)(wtly1+Math.sin(wsa1)*1), (float)(wtry1+Math.sin(wsa1)*1), (float)wtry1}, PolygonRoi.POLYGON);
+				w1c.setStrokeWidth(0.0);
+				w1c.setStrokeColor(Color.YELLOW);
+				w1c.setPosition(1);
+				search_window_overlay.add(w1c);
+				float[] w1_line_xs = new float[BACKTRACK+AVERAGE_LENGTH];
+				float[] w1_line_ys = new float[BACKTRACK+AVERAGE_LENGTH];
+				for(int j = 0; j < BACKTRACK+AVERAGE_LENGTH; ++j)
+				{
+					w1_line_xs[j] = (float)(l.get(j).px + l.get(j).sx);
+					w1_line_ys[j] = (float)(l.get(j).py + l.get(j).sy);
+				}
+				Roi w1l = new PolygonRoi(w1_line_xs, w1_line_ys, PolygonRoi.POLYLINE);
+				w1l.setStrokeWidth(0.0);
+				w1l.setStrokeColor(Color.YELLOW);
+				w1l.setPosition(1);
+				search_window_overlay.add(w1l);
 				
-				Roi w2 = new Roi(wtlx2, wtly2, SEARCH_DISTANCE, SEARCH_DISTANCE);
+				Roi w2 = new PolygonRoi(new float[]{(float)wtlx2, (float)(wtlx2+Math.cos(wsa2)*SEARCH_DISTANCE), (float)(wtrx2+Math.cos(wsa2)*SEARCH_DISTANCE), (float)wtrx2}, new float[]{(float)wtly2, (float)(wtly2+Math.sin(wsa2)*SEARCH_DISTANCE), (float)(wtry2+Math.sin(wsa2)*SEARCH_DISTANCE), (float)wtry2}, PolygonRoi.POLYGON);
+				//Roi w2 = new Roi(wtlx2, wtly2, SEARCH_DISTANCE, SEARCH_DISTANCE);
 				w2.setStrokeWidth(0.0);
 				w2.setStrokeColor(Color.ORANGE);
 				w2.setPosition(1);
-				window_overlay.add(w2);
+				search_window_overlay.add(w2);
+				Roi w2c = new PolygonRoi(new float[]{(float)wtlx2, (float)(wtlx2+Math.cos(wsa2)*1), (float)(wtrx2+Math.cos(wsa2)*1), (float)wtrx2}, new float[]{(float)wtly2, (float)(wtly2+Math.sin(wsa2)*1), (float)(wtry2+Math.sin(wsa2)*1), (float)wtry2}, PolygonRoi.POLYGON);     
+				w2c.setStrokeWidth(0.0);
+				w2c.setStrokeColor(Color.ORANGE);
+				w2c.setPosition(1);
+				search_window_overlay.add(w2c);
+				float[] w2_line_xs = new float[BACKTRACK+AVERAGE_LENGTH];
+				float[] w2_line_ys = new float[BACKTRACK+AVERAGE_LENGTH];
+				for(int j = 0; j < BACKTRACK+AVERAGE_LENGTH; ++j)
+				{
+					w2_line_xs[j] = (float)(l.get(l.size()-j-1).px + l.get(l.size()-j-1).sx);
+					w2_line_ys[j] = (float)(l.get(l.size()-j-1).py + l.get(l.size()-j-1).sy);
+				}
+				Roi w2l = new PolygonRoi(w2_line_xs, w2_line_ys, PolygonRoi.POLYLINE);
+				w2l.setStrokeWidth(0.0);
+				w2l.setStrokeColor(Color.ORANGE);
+				w2l.setPosition(1);
+				search_window_overlay.add(w2l);
 				
+				// find all possible matches
+				for(int j = 0; j < lines.size(); ++j)
+				{
+					// skip self
+					if(j == i) continue;
+					
+					// get other line
+					Line ol = lines.get(j);
+					
+					// again, skip if less than some size
+					if(ol.size() < 2+AVERAGE_LENGTH+2*BACKTRACK) continue;
+					
+					// get coordinates of points
+					int olx1 = ol.get(0+BACKTRACK).px;
+					int oly1 = ol.get(0+BACKTRACK).py;
+					int olx2 = ol.get(ol.size()-BACKTRACK-1).px;
+					int oly2 = ol.get(ol.size()-BACKTRACK-1).py;
+					
+					// find a match
+					//if(olx1 >= wtlx1 && olx1 <= wtlx1+SEARCH_DISTANCE && oly1 >= wtly1 && oly1 <= wtly1+SEARCH_DISTANCE)
+					if(w1.contains(olx1, oly1))
+					{
+						System.err.println("found match between W1 (" + wx1 + "," + wy1 + ") and OL1 (" + olx1 + "," + oly1 + ")");
+						//lmatches.add(ol);
+						//wmatches.add(new Integer(1));
+						//pmatches.add(new Integer(1));
+					}
+					//if(olx2 >= wtlx1 && olx2 <= wtlx1+SEARCH_DISTANCE && oly2 >= wtly1 && oly2 <= wtly1+SEARCH_DISTANCE)
+					if(w1.contains(olx2, oly2))
+					{
+						System.err.println("found match between W1 (" + wx1 + "," + wy1 + ") and OL2 (" + olx2 + "," + oly2 + ")");
+						//lmatches.add(ol);
+						//wmatches.add(new Integer(1));
+						//pmatches.add(new Integer(2));
+					}
+					//if(olx1 >= wtlx2 && olx1 <= wtlx2+SEARCH_DISTANCE && oly1 >= wtly2 && oly1 <= wtly2+SEARCH_DISTANCE)
+					if(w2.contains(olx1, oly1))
+					{
+						System.err.println("found match between W2 (" + wx2 + "," + wy2 + ") and OL1 (" + olx1 + "," + oly1 + ")");
+						//lmatches.add(ol);
+						//wmatches.add(new Integer(2));
+						//pmatches.add(new Integer(1));
+					}
+					//if(olx2 >= wtlx2 && olx2 <= wtlx2+SEARCH_DISTANCE && oly2 >= wtly2 && oly2 <= wtly2+SEARCH_DISTANCE)
+					if(w2.contains(olx2, oly2))
+					{
+						System.err.println("found match between W2 (" + wx2 + "," + wy2 + ") and OL2 (" + olx2 + "," + oly2 + ")");
+						//lmatches.add(ol);
+						//wmatches.add(new Integer(2));
+						//pmatches.add(new Integer(2));
+					}
+				}
+			}
+		
+//		if(DEBUG_MODE_ENABLED)
+//		{
+			ImagePlus search_window_overlay_imp = new ImagePlus("Search windows", search_window_overlay_ip);
+			search_window_overlay_imp.setOverlay(search_window_overlay); // TMP: DEBUG
+			//search_window_overlay_imp.updateAndRepaintWindow();
+			search_window_overlay_imp.show();
+//		}
+		
+	/*  LINKING OF LINES 
 				// find matching lines
 				Vector<Line> lmatches = new Vector<Line>();
 				Vector<Integer> wmatches = new Vector<Integer>();
@@ -1209,7 +1313,7 @@ public class Stegers_Algorithm implements PlugIn
 					Line ol = lines.get(j);
 					
 					// again, skip if less than some size
-					if(ol.size() < 2) continue;
+					if(ol.size() < 2+AVERAGE_LENGTH+2*BACKTRACK) continue;
 					
 					// get coordinates of points
 					int olx1 = ol.get(0+BACKTRACK).px;
@@ -1282,8 +1386,8 @@ public class Stegers_Algorithm implements PlugIn
 						diff_distance = Math.sqrt(dspx*dspx+dspy*dspy);
 						
 						// calculate angle difference
-						double ddsx = (best_line.get(0+BACKTRACK).px + best_line.get(0+BACKTRACK).sx) - (best_line.get(1+BACKTRACK).px + best_line.get(1+BACKTRACK).sx);
-						double ddsy = (best_line.get(0+BACKTRACK).py + best_line.get(0+BACKTRACK).sy) - (best_line.get(1+BACKTRACK).py + best_line.get(1+BACKTRACK).sy);
+						double ddsx = (best_line.get(0+BACKTRACK).px + best_line.get(0+BACKTRACK).sx) - (best_line.get(1+BACKTRACK+AVERAGE_LENGTH).px + best_line.get(1+BACKTRACK+AVERAGE_LENGTH).sx);
+						double ddsy = (best_line.get(0+BACKTRACK).py + best_line.get(0+BACKTRACK).sy) - (best_line.get(1+BACKTRACK+AVERAGE_LENGTH).py + best_line.get(1+BACKTRACK+AVERAGE_LENGTH).sy);
 						double dwsa = Math.atan2(ddsy, ddsx);
 						
 						System.err.println("wsa1 = " + wsa1*180/Math.PI);
@@ -1306,8 +1410,8 @@ public class Stegers_Algorithm implements PlugIn
 						diff_distance = Math.sqrt(dspx*dspx+dspy*dspy);
 						
 						// calculate angle difference
-						double ddsx = (best_line.get(best_line.size()-BACKTRACK-1).px + best_line.get(best_line.size()-BACKTRACK-1).sx) - (best_line.get(best_line.size()-BACKTRACK-2).px + best_line.get(best_line.size()-BACKTRACK-2).sx);
-						double ddsy = (best_line.get(best_line.size()-BACKTRACK-1).py + best_line.get(best_line.size()-BACKTRACK-1).sy) - (best_line.get(best_line.size()-BACKTRACK-2).py + best_line.get(best_line.size()-BACKTRACK-2).sy);
+						double ddsx = (best_line.get(best_line.size()-BACKTRACK-1).px + best_line.get(best_line.size()-BACKTRACK-1).sx) - (best_line.get(best_line.size()-BACKTRACK-AVERAGE_LENGTH-2).px + best_line.get(best_line.size()-BACKTRACK-AVERAGE_LENGTH-2).sx);
+						double ddsy = (best_line.get(best_line.size()-BACKTRACK-1).py + best_line.get(best_line.size()-BACKTRACK-1).sy) - (best_line.get(best_line.size()-BACKTRACK-AVERAGE_LENGTH-2).py + best_line.get(best_line.size()-BACKTRACK-AVERAGE_LENGTH-2).sy);
 						double dwsa = Math.atan2(ddsy, ddsx);
 						
 						System.err.println("wsa1 = " + wsa1*180/Math.PI);
@@ -1330,8 +1434,8 @@ public class Stegers_Algorithm implements PlugIn
 						diff_distance = Math.sqrt(dspx*dspx+dspy*dspy);
 						
 						// calculate angle difference
-						double ddsx = (best_line.get(0+BACKTRACK).px + best_line.get(0+BACKTRACK).sx) - (best_line.get(1+BACKTRACK).px + best_line.get(1+BACKTRACK).sx);
-						double ddsy = (best_line.get(0+BACKTRACK).py + best_line.get(0+BACKTRACK).sy) - (best_line.get(1+BACKTRACK).py + best_line.get(1+BACKTRACK).sy);
+						double ddsx = (best_line.get(0+BACKTRACK).px + best_line.get(0+BACKTRACK).sx) - (best_line.get(1+BACKTRACK+AVERAGE_LENGTH).px + best_line.get(1+BACKTRACK+AVERAGE_LENGTH).sx);
+						double ddsy = (best_line.get(0+BACKTRACK).py + best_line.get(0+BACKTRACK).sy) - (best_line.get(1+BACKTRACK+AVERAGE_LENGTH).py + best_line.get(1+BACKTRACK+AVERAGE_LENGTH).sy);
 						double dwsa = Math.atan2(ddsy, ddsx);
 						
 						System.err.println("wsa2 = " + wsa2*180/Math.PI);
@@ -1354,8 +1458,8 @@ public class Stegers_Algorithm implements PlugIn
 						diff_distance = Math.sqrt(dspx*dspx+dspy*dspy);
 						
 						// calculate angle difference
-						double ddsx = (best_line.get(best_line.size()-BACKTRACK-1).px + best_line.get(best_line.size()-BACKTRACK-1).sx) - (best_line.get(best_line.size()-BACKTRACK-2).px + best_line.get(best_line.size()-BACKTRACK-2).sx);
-						double ddsy = (best_line.get(best_line.size()-BACKTRACK-1).py + best_line.get(best_line.size()-BACKTRACK-1).sy) - (best_line.get(best_line.size()-BACKTRACK-2).py + best_line.get(best_line.size()-BACKTRACK-2).sy);
+						double ddsx = (best_line.get(best_line.size()-BACKTRACK-1).px + best_line.get(best_line.size()-BACKTRACK-1).sx) - (best_line.get(best_line.size()-BACKTRACK-AVERAGE_LENGTH-2).px + best_line.get(best_line.size()-BACKTRACK-AVERAGE_LENGTH-2).sx);
+						double ddsy = (best_line.get(best_line.size()-BACKTRACK-1).py + best_line.get(best_line.size()-BACKTRACK-1).sy) - (best_line.get(best_line.size()-BACKTRACK-AVERAGE_LENGTH-2).py + best_line.get(best_line.size()-BACKTRACK-AVERAGE_LENGTH-2).sy);
 						double dwsa = Math.atan2(ddsy, ddsx);
 						
 						System.err.println("wsa2 = " + wsa2*180/Math.PI);
@@ -1370,12 +1474,12 @@ public class Stegers_Algorithm implements PlugIn
 						diff_angle = Math.PI - diff_angle; // flip
 					}
 					
-					/*if(diff_angle > MAX_BENDING_ANGLE)
-					{
-						continue; // skip match
-					}*/
+					//if(diff_angle > MAX_BENDING_ANGLE)
+					//{
+					//	continue; // skip match
+					//}
 					
-					double matching_cost = diff_angle;//diff_distance+COST_FUNCTION_WEIGHT*diff_angle; // TODO: define cost function based on distance and orientation
+					double matching_cost = diff_distance+5*3*SIGMA*diff_angle;//diff_distance+COST_FUNCTION_WEIGHT*diff_angle; // TODO: define cost function based on distance and orientation
 					
 					// check for better match
 					if(matching_cost < best_matching_cost)
@@ -1441,10 +1545,8 @@ public class Stegers_Algorithm implements PlugIn
 				}
 			}
 		}
-		ImagePlus window_overlay_imp = new ImagePlus("Search windows", window_overlay_ip);
-		window_overlay_imp.setOverlay(window_overlay); // TMP: DEBUG
-		//window_overlay_imp.updateAndRepaintWindow();
-		window_overlay_imp.show();
+		END OF LINKING */
+		
 		}
 		
 		// *********************************************************************
