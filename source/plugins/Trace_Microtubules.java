@@ -249,10 +249,6 @@ public class Trace_Microtubules implements PlugIn
 		Prefs.set("mt_trace.filter_r_squared", FILTER_ON_R_SQUARED);
 		Prefs.set("mt_trace.filter_r_squared_threshold", R_SQUARED_THRESHOLD);
 		
-		Prefs.set("mt_trace.angular_resolution", ANGULAR_RESOLUTION);
-		Prefs.set("mt_trace.anisotropy_factor", ANISOTROPY_FACTOR);
-		Prefs.set("mt_trace.odf_peak_width", ODF_PEAK_WIDTH);
-		
 		Prefs.set("mt_trace.valid_line_point_threshold", VALID_LINE_POINT_THRESHOLD);
 		Prefs.set("mt_trace.skeletonize_point_map", SKELETONIZE_POINTS_MASK);
 		Prefs.set("mt_trace.filter_point_map", FILTER_POINTS_MASK);
@@ -264,7 +260,7 @@ public class Trace_Microtubules implements PlugIn
 		Prefs.set("mt_trace.debug_mode", DEBUG_MODE_ENABLED);
 		Prefs.set("mt_trace.show_results_table", SHOW_RESULTS_TABLE);
 		Prefs.set("mt_trace.show_vector_overlay", SHOW_VECTOR_OVERLAY);
-		Prefs.set("mt_trace.show_odf_overlay", SHOW_VECTOR_OVERLAY);
+		Prefs.set("mt_trace.show_odf_overlay", SHOW_ODF_OVERLAY);
 		Prefs.set("mt_trace.use_vector_normals", USE_VECTOR_NORMALS);
 		Prefs.set("mt_trace.use_transparency", USE_TRANSPARENCY);
 		
