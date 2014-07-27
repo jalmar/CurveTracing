@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Vector;
 import java.util.HashMap;
+import java.util.HashSet;
 
 import java.awt.Color;
 
@@ -40,6 +41,7 @@ import filters.DerivativeOfGaussian;
 import filters.ConnectedComponents; // for rainbow LUT
 import core.Point;
 import core.Line;
+import util.Tuple;
 
 
 /**
@@ -1131,6 +1133,8 @@ public class Stegers_Algorithm implements PlugIn
 			int AVERAGE_LENGTH = 10;
 			ImageProcessor search_window_overlay_ip = ip.duplicate();
 			Overlay search_window_overlay = new Overlay(); // TMP: DEBUG
+			HashMap<Tuple<Line, Integer>, HashSet<Tuple<Line, Integer> > > candidate_matches = new HashMap<Tuple<Line, Integer>, HashSet<Tuple<Line, Integer> > >();
+			
 			// for each line
 			for(int i = 0; i < lines.size(); ++i)
 			{
@@ -1139,8 +1143,6 @@ public class Stegers_Algorithm implements PlugIn
 				
 				// skip if less than some size
 				if(l.size() < 2+AVERAGE_LENGTH+2*BACKTRACK) continue;
-				
-				// TODO: remove last couple (1, 3, maybe 5?) of line point?
 				
 				// for both end points
 				int wx1 = l.get(0+BACKTRACK).px;
@@ -1163,32 +1165,19 @@ public class Stegers_Algorithm implements PlugIn
 				double wdsy2 = (l.get(l.size()-BACKTRACK-1).py + l.get(l.size()-BACKTRACK-1).sy) - (l.get(l.size()-BACKTRACK-AVERAGE_LENGTH-2).py + l.get(l.size()-BACKTRACK-AVERAGE_LENGTH-2).sy);
 				double wsa2 = Math.atan2(wdsy2, wdsx2);
 				
-				// TODO: estimate peristence length
-				// TODO: adjust search window accordingly
-				
 				// define search window
-				double wtlx1 = wx1 +Math.cos(wsa1-Math.PI/2)*0.5*0.5*SEARCH_DISTANCE;
-				double wtly1 = wy1 + Math.sin(wsa1-Math.PI/2)*0.5*0.5*SEARCH_DISTANCE;
-				double wtrx1 = wx1 + Math.cos(wsa1+Math.PI/2)*0.5*0.5*SEARCH_DISTANCE;
-				double wtry1 = wy1 + Math.sin(wsa1+Math.PI/2)*0.5*0.5*SEARCH_DISTANCE;
+				double wtlx1 = wx1 +Math.cos(wsa1-Math.PI/2)*0.5*0.5*SEARCH_DISTANCE + 0.5; // NOTE: half pex offset
+				double wtly1 = wy1 + Math.sin(wsa1-Math.PI/2)*0.5*0.5*SEARCH_DISTANCE + 0.5; // NOTE: half pex offset
+				double wtrx1 = wx1 + Math.cos(wsa1+Math.PI/2)*0.5*0.5*SEARCH_DISTANCE + 0.5; // NOTE: half pex offset
+				double wtry1 = wy1 + Math.sin(wsa1+Math.PI/2)*0.5*0.5*SEARCH_DISTANCE + 0.5; // NOTE: half pex offset
 				
-				//int wtlx1 = wx1 + (int)(-0.5*SEARCH_DISTANCE + wdx1*0.5*SEARCH_DISTANCE);
-				//int wtly1 = wy1 + (int)(-0.5*SEARCH_DISTANCE + wdy1*0.5*SEARCH_DISTANCE);
-				//int wbrx1 = (int)(0.5*SEARCH_DISTANCE + wdx1*0.5*SEARCH_DISTANCE);
-				//int wbry1 = (int)(0.5*SEARCH_DISTANCE + wdy1*0.5*SEARCH_DISTANCE);
-				
-				double wtlx2 = wx2 + Math.cos(wsa2-Math.PI/2)*0.5*0.5*SEARCH_DISTANCE;
-				double wtly2 = wy2 + Math.sin(wsa2-Math.PI/2)*0.5*0.5*SEARCH_DISTANCE;
-				double wtrx2 = wx2 + Math.cos(wsa2+Math.PI/2)*0.5*0.5*SEARCH_DISTANCE;
-				double wtry2 = wy2 + Math.sin(wsa2+Math.PI/2)*0.5*0.5*SEARCH_DISTANCE;
-				//int wtlx2 = wx2 + (int)(-0.5*SEARCH_DISTANCE + wdx2*0.5*SEARCH_DISTANCE);
-				//int wtly2 = wy2 + (int)(-0.5*SEARCH_DISTANCE + wdy2*0.5*SEARCH_DISTANCE);
-				//int wbrx2 = wx2 + (int)(0.5*SEARCH_DISTANCE + wdx2*0.5*SEARCH_DISTANCE);
-				//int wbry2 = wy2 + (int)(0.5*SEARCH_DISTANCE + wdy2*0.5*SEARCH_DISTANCE);
+				double wtlx2 = wx2 + Math.cos(wsa2-Math.PI/2)*0.5*0.5*SEARCH_DISTANCE + 0.5; // NOTE: half pex offset
+				double wtly2 = wy2 + Math.sin(wsa2-Math.PI/2)*0.5*0.5*SEARCH_DISTANCE + 0.5; // NOTE: half pex offset
+				double wtrx2 = wx2 + Math.cos(wsa2+Math.PI/2)*0.5*0.5*SEARCH_DISTANCE + 0.5; // NOTE: half pex offset
+				double wtry2 = wy2 + Math.sin(wsa2+Math.PI/2)*0.5*0.5*SEARCH_DISTANCE + 0.5; // NOTE: half pex offset
 				
 				// DEBUG: draw search windows in overlay
 				Roi w1 = new PolygonRoi(new float[]{(float)wtlx1, (float)(wtlx1+Math.cos(wsa1)*SEARCH_DISTANCE), (float)(wtrx1+Math.cos(wsa1)*SEARCH_DISTANCE), (float)wtrx1}, new float[]{(float)wtly1, (float)(wtly1+Math.sin(wsa1)*SEARCH_DISTANCE), (float)(wtry1+Math.sin(wsa1)*SEARCH_DISTANCE), (float)wtry1}, PolygonRoi.POLYGON);
-				//Roi w1 = new Roi(wtlx1, wtly1, SEARCH_DISTANCE, SEARCH_DISTANCE);
 				w1.setStrokeWidth(0.0);
 				w1.setStrokeColor(Color.YELLOW);
 				w1.setPosition(1);
@@ -1212,7 +1201,6 @@ public class Stegers_Algorithm implements PlugIn
 				search_window_overlay.add(w1l);
 				
 				Roi w2 = new PolygonRoi(new float[]{(float)wtlx2, (float)(wtlx2+Math.cos(wsa2)*SEARCH_DISTANCE), (float)(wtrx2+Math.cos(wsa2)*SEARCH_DISTANCE), (float)wtrx2}, new float[]{(float)wtly2, (float)(wtly2+Math.sin(wsa2)*SEARCH_DISTANCE), (float)(wtry2+Math.sin(wsa2)*SEARCH_DISTANCE), (float)wtry2}, PolygonRoi.POLYGON);
-				//Roi w2 = new Roi(wtlx2, wtly2, SEARCH_DISTANCE, SEARCH_DISTANCE);
 				w2.setStrokeWidth(0.0);
 				w2.setStrokeColor(Color.ORANGE);
 				w2.setPosition(1);
@@ -1254,50 +1242,83 @@ public class Stegers_Algorithm implements PlugIn
 					int oly2 = ol.get(ol.size()-BACKTRACK-1).py;
 					
 					// find a match
-					//if(olx1 >= wtlx1 && olx1 <= wtlx1+SEARCH_DISTANCE && oly1 >= wtly1 && oly1 <= wtly1+SEARCH_DISTANCE)
+					int source_window = -1;
+					int destination_window = -1;
 					if(w1.contains(olx1, oly1))
 					{
-						System.err.println("found match between W1 (" + wx1 + "," + wy1 + ") and OL1 (" + olx1 + "," + oly1 + ")");
-						//lmatches.add(ol);
-						//wmatches.add(new Integer(1));
-						//pmatches.add(new Integer(1));
+						System.err.println("found possible match between W1 (" + wx1 + "," + wy1 + ") and OL1 (" + olx1 + "," + oly1 + ")");
+						source_window = 1;
+						destination_window = 1;
 					}
-					//if(olx2 >= wtlx1 && olx2 <= wtlx1+SEARCH_DISTANCE && oly2 >= wtly1 && oly2 <= wtly1+SEARCH_DISTANCE)
 					if(w1.contains(olx2, oly2))
 					{
-						System.err.println("found match between W1 (" + wx1 + "," + wy1 + ") and OL2 (" + olx2 + "," + oly2 + ")");
-						//lmatches.add(ol);
-						//wmatches.add(new Integer(1));
-						//pmatches.add(new Integer(2));
+						System.err.println("found possible match between W1 (" + wx1 + "," + wy1 + ") and OL2 (" + olx2 + "," + oly2 + ")");
+						source_window = 1;
+						destination_window = 2;
 					}
-					//if(olx1 >= wtlx2 && olx1 <= wtlx2+SEARCH_DISTANCE && oly1 >= wtly2 && oly1 <= wtly2+SEARCH_DISTANCE)
 					if(w2.contains(olx1, oly1))
 					{
-						System.err.println("found match between W2 (" + wx2 + "," + wy2 + ") and OL1 (" + olx1 + "," + oly1 + ")");
-						//lmatches.add(ol);
-						//wmatches.add(new Integer(2));
-						//pmatches.add(new Integer(1));
+						System.err.println("found possible match between W2 (" + wx2 + "," + wy2 + ") and OL1 (" + olx1 + "," + oly1 + ")");
+						source_window = 2;
+						destination_window = 1;
 					}
-					//if(olx2 >= wtlx2 && olx2 <= wtlx2+SEARCH_DISTANCE && oly2 >= wtly2 && oly2 <= wtly2+SEARCH_DISTANCE)
 					if(w2.contains(olx2, oly2))
 					{
-						System.err.println("found match between W2 (" + wx2 + "," + wy2 + ") and OL2 (" + olx2 + "," + oly2 + ")");
-						//lmatches.add(ol);
-						//wmatches.add(new Integer(2));
-						//pmatches.add(new Integer(2));
+						System.err.println("found possible match between W2 (" + wx2 + "," + wy2 + ") and OL2 (" + olx2 + "," + oly2 + ")");
+						source_window = 2;
+						destination_window = 2;
+					}
+					
+					// add to candidate matches if match was found
+					if(source_window != -1 && destination_window != -1)
+					{
+						Tuple<Line, Integer> source = new Tuple<Line, Integer>(l, source_window);
+						Tuple<Line, Integer> destination = new Tuple<Line, Integer>(ol, destination_window);
+						
+						// first direction
+						if(candidate_matches.containsKey(source))
+						{
+							// add to existing set
+							HashSet<Tuple<Line, Integer> > source_set = candidate_matches.get(source);
+							source_set.add(destination);
+							candidate_matches.put(source, source_set);
+						}
+						else
+						{
+							// create new entry
+							HashSet<Tuple<Line, Integer> > source_set = new HashSet<Tuple<Line, Integer> >();
+							source_set.add(destination);
+							candidate_matches.put(source, source_set);
+						}
+						
+						// bi-directional
+						if(candidate_matches.containsKey(destination))
+						{
+							// add to existing set
+							HashSet<Tuple<Line, Integer> > destination_set = candidate_matches.get(destination);
+							destination_set.add(source);
+							candidate_matches.put(destination, destination_set);
+						}
+						else
+						{
+							// create new entry
+							HashSet<Tuple<Line, Integer> > destination_set = new HashSet<Tuple<Line, Integer> >();
+							destination_set.add(source);
+							candidate_matches.put(destination, destination_set);
+						}
 					}
 				}
 			}
 		
-//		if(DEBUG_MODE_ENABLED)
-//		{
-			ImagePlus search_window_overlay_imp = new ImagePlus("Search windows", search_window_overlay_ip);
-			search_window_overlay_imp.setOverlay(search_window_overlay); // TMP: DEBUG
-			//search_window_overlay_imp.updateAndRepaintWindow();
-			search_window_overlay_imp.show();
-//		}
+//			if(DEBUG_MODE_ENABLED)
+//			{
+				ImagePlus search_window_overlay_imp = new ImagePlus("Search windows", search_window_overlay_ip);
+				search_window_overlay_imp.setOverlay(search_window_overlay); // TMP: DEBUG
+				//search_window_overlay_imp.updateAndRepaintWindow();
+				search_window_overlay_imp.show();
+//			}
 		
-	/*  LINKING OF LINES 
+/*  LINKING OF LINES 
 				// find matching lines
 				Vector<Line> lmatches = new Vector<Line>();
 				Vector<Integer> wmatches = new Vector<Integer>();
