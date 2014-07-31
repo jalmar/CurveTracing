@@ -5,6 +5,7 @@ package plugins;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Vector;
+import java.util.Map;
 import java.util.HashMap;
 import java.util.HashSet;
 
@@ -41,7 +42,7 @@ import filters.DerivativeOfGaussian;
 import filters.ConnectedComponents; // for rainbow LUT
 import core.Point;
 import core.Line;
-import util.Tuple;
+import utils.Tuple;
 
 
 /**
@@ -414,6 +415,19 @@ public class Stegers_Algorithm implements PlugIn
 						second_eigenvalue = d.get(0,0);
 						sx = v.get(0,0);
 						sy = v.get(1,0);
+					}
+					
+					// reorient all eigenvecors in same direction
+					if(ny < 0)
+					{
+						nx = -nx;
+						ny = -ny;
+					}
+					
+					if(sy < 0)
+					{
+						sx = -sx;
+						sy = -sy;
 					}
 					
 					// calculate position of line point and filter line points
@@ -1094,7 +1108,7 @@ public class Stegers_Algorithm implements PlugIn
 			if(PREVENT_SPLINTER_FRAGMENTS && line.size() <= SPLINTER_FRAGMENT_THRESHOLD)
 			{
 				System.err.println("Rejecting small line fragment");
-				lines.remove(line);
+				lines.remove(line); // TODO: what if line was split from previous line?
 				
 				for(Point p : line)
 				{
@@ -1129,8 +1143,8 @@ public class Stegers_Algorithm implements PlugIn
 		if(ENABLE_LINKING)
 		{
 			double SEARCH_DISTANCE = 2*Math.ceil(6*SIGMA); // pixels
-			int BACKTRACK = 3; // number of point to backtrack
-			int AVERAGE_LENGTH = 10;
+			int BACKTRACK_DISTANCE = 3; // number of point to backtrack
+			int AVERAGING_DISTANCE = 10;
 			ImageProcessor search_window_overlay_ip = ip.duplicate();
 			Overlay search_window_overlay = new Overlay(); // TMP: DEBUG
 			HashMap<Tuple<Line, Integer>, HashSet<Tuple<Line, Integer> > > candidate_matches = new HashMap<Tuple<Line, Integer>, HashSet<Tuple<Line, Integer> > >();
@@ -1142,57 +1156,60 @@ public class Stegers_Algorithm implements PlugIn
 				Line l = lines.get(i);
 				
 				// skip if less than some size
-				if(l.size() < 2+AVERAGE_LENGTH+2*BACKTRACK) continue;
+				if(l.size() < 2+AVERAGING_DISTANCE+2*BACKTRACK_DISTANCE) continue;
 				
 				// for both end points
-				int wx1 = l.get(0+BACKTRACK).px;
-				int wy1 = l.get(0+BACKTRACK).py;
-				double wsx1 = l.get(0+BACKTRACK).sx;
-				double wsy1 = l.get(0+BACKTRACK).sx;
-				int wdx1 = l.get(0+BACKTRACK).px - l.get(1+BACKTRACK).px;
-				int wdy1 = l.get(0+BACKTRACK).py - l.get(1+BACKTRACK).py;
-				double wdsx1 = (l.get(0+BACKTRACK).px + l.get(0+BACKTRACK).sx) - (l.get(1+BACKTRACK+AVERAGE_LENGTH).px + l.get(1+BACKTRACK+AVERAGE_LENGTH).sx);
-				double wdsy1 = (l.get(0+BACKTRACK).py + l.get(0+BACKTRACK).sy) - (l.get(1+BACKTRACK+AVERAGE_LENGTH).py + l.get(1+BACKTRACK+AVERAGE_LENGTH).sy);
+				int wx1 = l.get(0+BACKTRACK_DISTANCE).px;
+				int wy1 = l.get(0+BACKTRACK_DISTANCE).py;
+				double wsx1 = l.get(0+BACKTRACK_DISTANCE).sx;
+				double wsy1 = l.get(0+BACKTRACK_DISTANCE).sy;
+				int wdx1 = l.get(0+BACKTRACK_DISTANCE).px - l.get(1+BACKTRACK_DISTANCE).px;
+				int wdy1 = l.get(0+BACKTRACK_DISTANCE).py - l.get(1+BACKTRACK_DISTANCE).py;
+				double wdsx1 = (l.get(0+BACKTRACK_DISTANCE).px + l.get(0+BACKTRACK_DISTANCE).sx) - (l.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).px + l.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sx);
+				double wdsy1 = (l.get(0+BACKTRACK_DISTANCE).py + l.get(0+BACKTRACK_DISTANCE).sy) - (l.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).py + l.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sy);
 				double wsa1 = Math.atan2(wdsy1, wdsx1);
 				
-				int wx2 = l.get(l.size()-BACKTRACK-1).px;
-				int wy2 = l.get(l.size()-BACKTRACK-1).py;
-				double wsx2 = l.get(l.size()-BACKTRACK-1).sx;
-				double wsy2 = l.get(l.size()-BACKTRACK-1).sy;
-				int wdx2 = l.get(l.size()-BACKTRACK-1).px - l.get(l.size()-BACKTRACK-2).px;
-				int wdy2 = l.get(l.size()-BACKTRACK-1).py - l.get(l.size()-BACKTRACK-2).py;
-				double wdsx2 = (l.get(l.size()-BACKTRACK-1).px + l.get(l.size()-BACKTRACK-1).sx) - (l.get(l.size()-BACKTRACK-AVERAGE_LENGTH-2).px + l.get(l.size()-BACKTRACK-AVERAGE_LENGTH-2).sx);
-				double wdsy2 = (l.get(l.size()-BACKTRACK-1).py + l.get(l.size()-BACKTRACK-1).sy) - (l.get(l.size()-BACKTRACK-AVERAGE_LENGTH-2).py + l.get(l.size()-BACKTRACK-AVERAGE_LENGTH-2).sy);
+				int wx2 = l.get(l.size()-BACKTRACK_DISTANCE-1).px;
+				int wy2 = l.get(l.size()-BACKTRACK_DISTANCE-1).py;
+				double wsx2 = l.get(l.size()-BACKTRACK_DISTANCE-1).sx;
+				double wsy2 = l.get(l.size()-BACKTRACK_DISTANCE-1).sy;
+				int wdx2 = l.get(l.size()-BACKTRACK_DISTANCE-1).px - l.get(l.size()-BACKTRACK_DISTANCE-2).px;
+				int wdy2 = l.get(l.size()-BACKTRACK_DISTANCE-1).py - l.get(l.size()-BACKTRACK_DISTANCE-2).py;
+				double wdsx2 = (l.get(l.size()-BACKTRACK_DISTANCE-1).px + l.get(l.size()-BACKTRACK_DISTANCE-1).sx) - (l.get(l.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).px + l.get(l.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sx);
+				double wdsy2 = (l.get(l.size()-BACKTRACK_DISTANCE-1).py + l.get(l.size()-BACKTRACK_DISTANCE-1).sy) - (l.get(l.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).py + l.get(l.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sy);
 				double wsa2 = Math.atan2(wdsy2, wdsx2);
 				
 				// define search window
-				double wtlx1 = wx1 +Math.cos(wsa1-Math.PI/2)*0.5*0.5*SEARCH_DISTANCE + 0.5; // NOTE: half pex offset
-				double wtly1 = wy1 + Math.sin(wsa1-Math.PI/2)*0.5*0.5*SEARCH_DISTANCE + 0.5; // NOTE: half pex offset
-				double wtrx1 = wx1 + Math.cos(wsa1+Math.PI/2)*0.5*0.5*SEARCH_DISTANCE + 0.5; // NOTE: half pex offset
-				double wtry1 = wy1 + Math.sin(wsa1+Math.PI/2)*0.5*0.5*SEARCH_DISTANCE + 0.5; // NOTE: half pex offset
+				double wtlx1 = wx1 + Math.cos(wsa1-Math.PI/2)*0.5*1.0 + 0.5 + wsx1; // NOTE: half pex offset
+				double wtly1 = wy1 + Math.sin(wsa1-Math.PI/2)*0.5*1.0 + 0.5 + wsy1; // NOTE: half pex offset
+				double wtrx1 = wx1 + Math.cos(wsa1+Math.PI/2)*0.5*1.0 + 0.5 + wsx1; // NOTE: half pex offset
+				double wtry1 = wy1 + Math.sin(wsa1+Math.PI/2)*0.5*1.0 + 0.5 + wsy1; // NOTE: half pex offset
 				
-				double wtlx2 = wx2 + Math.cos(wsa2-Math.PI/2)*0.5*0.5*SEARCH_DISTANCE + 0.5; // NOTE: half pex offset
-				double wtly2 = wy2 + Math.sin(wsa2-Math.PI/2)*0.5*0.5*SEARCH_DISTANCE + 0.5; // NOTE: half pex offset
-				double wtrx2 = wx2 + Math.cos(wsa2+Math.PI/2)*0.5*0.5*SEARCH_DISTANCE + 0.5; // NOTE: half pex offset
-				double wtry2 = wy2 + Math.sin(wsa2+Math.PI/2)*0.5*0.5*SEARCH_DISTANCE + 0.5; // NOTE: half pex offset
+				double wtlx2 = wx2 + Math.cos(wsa2-Math.PI/2)*0.5*1.0 + 0.5 + wsx2; // NOTE: half pex offset
+				double wtly2 = wy2 + Math.sin(wsa2-Math.PI/2)*0.5*1.0 + 0.5 + wsy2; // NOTE: half pex offset
+				double wtrx2 = wx2 + Math.cos(wsa2+Math.PI/2)*0.5*1.0 + 0.5 + wsx2; // NOTE: half pex offset
+				double wtry2 = wy2 + Math.sin(wsa2+Math.PI/2)*0.5*1.0 + 0.5 + wsy2; // NOTE: half pex offset
 				
 				// DEBUG: draw search windows in overlay
-				Roi w1 = new PolygonRoi(new float[]{(float)wtlx1, (float)(wtlx1+Math.cos(wsa1)*SEARCH_DISTANCE), (float)(wtrx1+Math.cos(wsa1)*SEARCH_DISTANCE), (float)wtrx1}, new float[]{(float)wtly1, (float)(wtly1+Math.sin(wsa1)*SEARCH_DISTANCE), (float)(wtry1+Math.sin(wsa1)*SEARCH_DISTANCE), (float)wtry1}, PolygonRoi.POLYGON);
+				double MAX_BENDING_ANGLE = 30.0;
+				double persistence_length = MAX_BENDING_ANGLE * (Math.PI / 180.0);
+				
+				Roi w1 = new PolygonRoi(new float[]{(float)wtlx1, (float)(wtlx1+Math.cos(wsa1-(0.5*persistence_length))*SEARCH_DISTANCE), (float)(wtrx1+Math.cos(wsa1+(0.5*persistence_length))*SEARCH_DISTANCE), (float)wtrx1}, new float[]{(float)wtly1, (float)(wtly1+Math.sin(wsa1-(0.5*persistence_length))*SEARCH_DISTANCE), (float)(wtry1+Math.sin(wsa1+(0.5*persistence_length))*SEARCH_DISTANCE), (float)wtry1}, PolygonRoi.POLYGON);
 				w1.setStrokeWidth(0.0);
 				w1.setStrokeColor(Color.YELLOW);
 				w1.setPosition(1);
 				search_window_overlay.add(w1);
-				Roi w1c = new PolygonRoi(new float[]{(float)wtlx1, (float)(wtlx1+Math.cos(wsa1)*1), (float)(wtrx1+Math.cos(wsa1)*1), (float)wtrx1}, new float[]{(float)wtly1, (float)(wtly1+Math.sin(wsa1)*1), (float)(wtry1+Math.sin(wsa1)*1), (float)wtry1}, PolygonRoi.POLYGON);
+				Roi w1c = new OvalRoi(wx1+0.5+wsx1-0.125, wy1+0.5+wsy1-0.125, 0.250, 0.250);
 				w1c.setStrokeWidth(0.0);
 				w1c.setStrokeColor(Color.YELLOW);
 				w1c.setPosition(1);
 				search_window_overlay.add(w1c);
-				float[] w1_line_xs = new float[BACKTRACK+AVERAGE_LENGTH];
-				float[] w1_line_ys = new float[BACKTRACK+AVERAGE_LENGTH];
-				for(int j = 0; j < BACKTRACK+AVERAGE_LENGTH; ++j)
+				float[] w1_line_xs = new float[BACKTRACK_DISTANCE+AVERAGING_DISTANCE];
+				float[] w1_line_ys = new float[BACKTRACK_DISTANCE+AVERAGING_DISTANCE];
+				for(int j = 0; j < BACKTRACK_DISTANCE+AVERAGING_DISTANCE; ++j)
 				{
-					w1_line_xs[j] = (float)(l.get(j).px + l.get(j).sx);
-					w1_line_ys[j] = (float)(l.get(j).py + l.get(j).sy);
+					w1_line_xs[j] = (float)(l.get(j).px + 0.5 + l.get(j).sx);
+					w1_line_ys[j] = (float)(l.get(j).py + 0.5 + l.get(j).sy);
 				}
 				Roi w1l = new PolygonRoi(w1_line_xs, w1_line_ys, PolygonRoi.POLYLINE);
 				w1l.setStrokeWidth(0.0);
@@ -1200,22 +1217,22 @@ public class Stegers_Algorithm implements PlugIn
 				w1l.setPosition(1);
 				search_window_overlay.add(w1l);
 				
-				Roi w2 = new PolygonRoi(new float[]{(float)wtlx2, (float)(wtlx2+Math.cos(wsa2)*SEARCH_DISTANCE), (float)(wtrx2+Math.cos(wsa2)*SEARCH_DISTANCE), (float)wtrx2}, new float[]{(float)wtly2, (float)(wtly2+Math.sin(wsa2)*SEARCH_DISTANCE), (float)(wtry2+Math.sin(wsa2)*SEARCH_DISTANCE), (float)wtry2}, PolygonRoi.POLYGON);
+				Roi w2 = new PolygonRoi(new float[]{(float)wtlx2, (float)(wtlx2+Math.cos(wsa2-(0.5*persistence_length))*SEARCH_DISTANCE), (float)(wtrx2+Math.cos(wsa2+(0.5*persistence_length))*SEARCH_DISTANCE), (float)wtrx2}, new float[]{(float)wtly2, (float)(wtly2+Math.sin(wsa2-(0.5*persistence_length))*SEARCH_DISTANCE), (float)(wtry2+Math.sin(wsa2+(0.5*persistence_length))*SEARCH_DISTANCE), (float)wtry2}, PolygonRoi.POLYGON);
 				w2.setStrokeWidth(0.0);
 				w2.setStrokeColor(Color.ORANGE);
 				w2.setPosition(1);
 				search_window_overlay.add(w2);
-				Roi w2c = new PolygonRoi(new float[]{(float)wtlx2, (float)(wtlx2+Math.cos(wsa2)*1), (float)(wtrx2+Math.cos(wsa2)*1), (float)wtrx2}, new float[]{(float)wtly2, (float)(wtly2+Math.sin(wsa2)*1), (float)(wtry2+Math.sin(wsa2)*1), (float)wtry2}, PolygonRoi.POLYGON);     
+				Roi w2c = new OvalRoi(wx2+0.5+wsx2-0.125, wy2+0.5+wsy2-0.125, 0.250, 0.250);    
 				w2c.setStrokeWidth(0.0);
 				w2c.setStrokeColor(Color.ORANGE);
 				w2c.setPosition(1);
 				search_window_overlay.add(w2c);
-				float[] w2_line_xs = new float[BACKTRACK+AVERAGE_LENGTH];
-				float[] w2_line_ys = new float[BACKTRACK+AVERAGE_LENGTH];
-				for(int j = 0; j < BACKTRACK+AVERAGE_LENGTH; ++j)
+				float[] w2_line_xs = new float[BACKTRACK_DISTANCE+AVERAGING_DISTANCE];
+				float[] w2_line_ys = new float[BACKTRACK_DISTANCE+AVERAGING_DISTANCE];
+				for(int j = 0; j < BACKTRACK_DISTANCE+AVERAGING_DISTANCE; ++j)
 				{
-					w2_line_xs[j] = (float)(l.get(l.size()-j-1).px + l.get(l.size()-j-1).sx);
-					w2_line_ys[j] = (float)(l.get(l.size()-j-1).py + l.get(l.size()-j-1).sy);
+					w2_line_xs[j] = (float)(l.get(l.size()-j-1).px + 0.5 + l.get(l.size()-j-1).sx);
+					w2_line_ys[j] = (float)(l.get(l.size()-j-1).py + 0.5 +  l.get(l.size()-j-1).sy);
 				}
 				Roi w2l = new PolygonRoi(w2_line_xs, w2_line_ys, PolygonRoi.POLYLINE);
 				w2l.setStrokeWidth(0.0);
@@ -1233,13 +1250,13 @@ public class Stegers_Algorithm implements PlugIn
 					Line ol = lines.get(j);
 					
 					// again, skip if less than some size
-					if(ol.size() < 2+AVERAGE_LENGTH+2*BACKTRACK) continue;
+					if(ol.size() < 2+AVERAGING_DISTANCE+2*BACKTRACK_DISTANCE) continue;
 					
 					// get coordinates of points
-					int olx1 = ol.get(0+BACKTRACK).px;
-					int oly1 = ol.get(0+BACKTRACK).py;
-					int olx2 = ol.get(ol.size()-BACKTRACK-1).px;
-					int oly2 = ol.get(ol.size()-BACKTRACK-1).py;
+					int olx1 = ol.get(0+BACKTRACK_DISTANCE).px;
+					int oly1 = ol.get(0+BACKTRACK_DISTANCE).py;
+					int olx2 = ol.get(ol.size()-BACKTRACK_DISTANCE-1).px;
+					int oly2 = ol.get(ol.size()-BACKTRACK_DISTANCE-1).py;
 					
 					// find a match
 					int source_window = -1;
@@ -1317,7 +1334,136 @@ public class Stegers_Algorithm implements PlugIn
 				//search_window_overlay_imp.updateAndRepaintWindow();
 				search_window_overlay_imp.show();
 //			}
-		
+			
+/*			//HashMap<Tuple<Line, Integer>, HashSet<Tuple<Line, Integer> > > candidate_matches
+			for(Map.Entry<Tuple<Line, Integer>, HashSet<Tuple<Line, Integer> > > entry : candidate_matches.entrySet())
+			{
+				// get source
+				Tuple<Line, Integer> source = entry.getKey();
+				
+				// get details on source
+				Line source_line = source.first;
+				int source_wx, source_wy;
+				double source_wsx, source_wsy;
+				int source_wdx, source_wdy;
+				double source_wdsx, source_wdsy;
+				double source_wsa;
+				if(source.second == 1) // front
+				{
+					source_wx = source_line.get(0+BACKTRACK_DISTANCE).px;
+					source_wy = source_line.get(0+BACKTRACK_DISTANCE).py;
+					source_wsx = source_line.get(0+BACKTRACK_DISTANCE).sx;
+					source_wsy = source_line.get(0+BACKTRACK_DISTANCE).sx;
+					source_wdx = source_line.get(0+BACKTRACK_DISTANCE).px - source_line.get(1+BACKTRACK_DISTANCE).px;
+					source_wdy = source_line.get(0+BACKTRACK_DISTANCE).py - source_line.get(1+BACKTRACK_DISTANCE).py;
+					source_wdsx = (source_line.get(0+BACKTRACK_DISTANCE).px + source_line.get(0+BACKTRACK_DISTANCE).sx) - (source_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).px + source_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sx);
+					source_wdsy = (source_line.get(0+BACKTRACK_DISTANCE).py + source_line.get(0+BACKTRACK_DISTANCE).sy) - (source_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).py + source_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sy);
+					source_wsa = Math.atan2(source_wdsy, source_wdsx);
+				}
+				else if(source.second == 2) // back
+				{
+					source_wx = source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).px;
+					source_wy = source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).py;
+					source_wsx = source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).sx;
+					source_wsy = source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).sy;
+					source_wdx = source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).px - source_line.get(source_line.size()-BACKTRACK_DISTANCE-2).px;
+					source_wdy = source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).py - source_line.get(source_line.size()-BACKTRACK_DISTANCE-2).py;
+					source_wdsx = (source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).px + source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).sx) - (source_line.get(source_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).px + source_line.get(source_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sx);
+					source_wdsy = (source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).py + source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).sy) - (source_line.get(source_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).py + source_line.get(source_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sy);
+					source_wsa = Math.atan2(source_wdsy, source_wdsx);
+				}
+				
+				// get set of destinations
+				HashSet<Tuple<Line, Integer> > destinations = entry.getValue();
+				
+				// find best match
+				Line best_matching_line = null;
+				int best_matching_window = -1;
+				double best_matching_cost = Double.MAX_VALUE;
+				for(Tuple<Line, Integer> destination : destinations)
+				{
+					// get details on source
+					Line destination_line = destination.first;
+					int destination_wx, destination_wy;
+					double destination_wsx, destination_wsy;
+					int destination_wdx, destination_wdy;
+					double destination_wdsx, destination_wdsy;
+					double destination_wsa;
+					if(destination.second == 1) // front
+					{
+						destination_wx = destination_line.get(0+BACKTRACK_DISTANCE).px;
+						destination_wy = destination_line.get(0+BACKTRACK_DISTANCE).py;
+						destination_wsx = destination_line.get(0+BACKTRACK_DISTANCE).sx;
+						destination_wsy = destination_line.get(0+BACKTRACK_DISTANCE).sx;
+						destination_wdx = destination_line.get(0+BACKTRACK_DISTANCE).px - destination_line.get(1+BACKTRACK_DISTANCE).px;
+						destination_wdy = destination_line.get(0+BACKTRACK_DISTANCE).py - destination_line.get(1+BACKTRACK_DISTANCE).py;
+						destination_wdsx = (destination_line.get(0+BACKTRACK_DISTANCE).px + destination_line.get(0+BACKTRACK_DISTANCE).sx) - (destination_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).px + destination_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sx);
+						destination_wdsy = (destination_line.get(0+BACKTRACK_DISTANCE).py + destination_line.get(0+BACKTRACK_DISTANCE).sy) - (destination_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).py + destination_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sy);
+						destination_wsa = Math.atan2(destination_wdsy, destination_wdsx);
+					}
+					else if(destination.second == 2) // back
+					{
+						destination_wx = destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).px;
+						destination_wy = destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).py;
+						destination_wsx = destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).sx;
+						destination_wsy = destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).sy;
+						destination_wdx = destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).px - destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-2).px;
+						destination_wdy = destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).py - destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-2).py;
+						destination_wdsx = (destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).px + destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).sx) - (destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).px + destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sx);
+						destination_wdsy = (destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).py + destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).sy) - (destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).py + destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sy);
+						destination_wsa = Math.atan2(destination_wdsy, destination_wdsx);
+					}
+					
+					// calculate distance between points
+					double dspx = (source_wx + source_wsx) - (destination_wx + destination_wsx);
+					double dspy = (source_wy + source_wsy) - (destination_wy + destination_wsy);
+					double diff_distance = Math.sqrt(dspx*dspx+dspy*dspy);
+						
+					// calculate difference in angle of traces
+					System.err.println("source_wsa = " + source_wsa*180/Math.PI);
+					System.err.println("destination_wsa = " + destination_wsa*180/Math.PI);
+					double diff_angle = Math.abs(source_wsa - destination_wsa);
+					System.err.println("diff_angle = " + diff_angle*180/Math.PI);
+					if(diff_angle > Math.PI)
+					{
+						diff_angle = (2*Math.PI) - diff_angle;
+						System.err.println("new diff_angle = " + diff_angle*180/Math.PI);
+					}
+					diff_angle = Math.PI - diff_angle; // NOTE: angle difference of 180 is optimal, 0 is -> flip angle so can be used as low cost
+					
+					// RSLV: move up to candidate match?
+					// RSLV: redundant with triangular field of views?
+					//if(diff_angle > MAX_BENDING_ANGLE)
+					//{
+					//	continue; // skip match
+					//}
+					
+					double matching_cost = diff_angle; //diff_distance+5*3*SIGMA*diff_angle;//diff_distance+COST_FUNCTION_WEIGHT*diff_angle; // TODO: define cost function based on distance and orientation
+					
+					// check for better match
+					if(matching_cost < best_matching_cost)
+					{
+						best_matching_cost = matching_cost;
+						best_matching_line = destination_line;
+						best_matching_window = destination.second;
+					}
+				}
+				
+				// if match found
+				if(best_matching_line != null && best_matching_window != -1)
+				{
+					// TODO: connect two lines together
+					
+					// TODO: remove key destination:window
+					// NOTE: iterator invalidated?!
+					
+					// TODO: replace all instances of destination:window with source:window
+					
+					// remove from candidate list (both source and destination:source?)
+				}
+			}
+*/
+			
 /*  LINKING OF LINES 
 				// find matching lines
 				Vector<Line> lmatches = new Vector<Line>();
@@ -1334,13 +1480,13 @@ public class Stegers_Algorithm implements PlugIn
 					Line ol = lines.get(j);
 					
 					// again, skip if less than some size
-					if(ol.size() < 2+AVERAGE_LENGTH+2*BACKTRACK) continue;
+					if(ol.size() < 2+AVERAGING_DISTANCE+2*BACKTRACK_DISTANCE) continue;
 					
 					// get coordinates of points
-					int olx1 = ol.get(0+BACKTRACK).px;
-					int oly1 = ol.get(0+BACKTRACK).py;
-					int olx2 = ol.get(ol.size()-BACKTRACK-1).px;
-					int oly2 = ol.get(ol.size()-BACKTRACK-1).py;
+					int olx1 = ol.get(0+BACKTRACK_DISTANCE).px;
+					int oly1 = ol.get(0+BACKTRACK_DISTANCE).py;
+					int olx2 = ol.get(ol.size()-BACKTRACK_DISTANCE-1).px;
+					int oly2 = ol.get(ol.size()-BACKTRACK_DISTANCE-1).py;
 					
 					// find a match
 					if(olx1 >= wtlx1 && olx1 <= wtlx1+SEARCH_DISTANCE && oly1 >= wtly1 && oly1 <= wtly1+SEARCH_DISTANCE)
@@ -1401,14 +1547,14 @@ public class Stegers_Algorithm implements PlugIn
 					if(best_window == 1 && best_point == 1)
 					{
 						// calculate distance difference
-						double dspx = (wx1 + wsx1) - (best_line.get(0+BACKTRACK).px + best_line.get(0+BACKTRACK).sx);
-						double dspy = (wy1 + wsy1) - (best_line.get(0+BACKTRACK).py + best_line.get(0+BACKTRACK).sy);
+						double dspx = (wx1 + wsx1) - (best_line.get(0+BACKTRACK_DISTANCE).px + best_line.get(0+BACKTRACK_DISTANCE).sx);
+						double dspy = (wy1 + wsy1) - (best_line.get(0+BACKTRACK_DISTANCE).py + best_line.get(0+BACKTRACK_DISTANCE).sy);
 						
 						diff_distance = Math.sqrt(dspx*dspx+dspy*dspy);
 						
 						// calculate angle difference
-						double ddsx = (best_line.get(0+BACKTRACK).px + best_line.get(0+BACKTRACK).sx) - (best_line.get(1+BACKTRACK+AVERAGE_LENGTH).px + best_line.get(1+BACKTRACK+AVERAGE_LENGTH).sx);
-						double ddsy = (best_line.get(0+BACKTRACK).py + best_line.get(0+BACKTRACK).sy) - (best_line.get(1+BACKTRACK+AVERAGE_LENGTH).py + best_line.get(1+BACKTRACK+AVERAGE_LENGTH).sy);
+						double ddsx = (best_line.get(0+BACKTRACK_DISTANCE).px + best_line.get(0+BACKTRACK_DISTANCE).sx) - (best_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).px + best_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sx);
+						double ddsy = (best_line.get(0+BACKTRACK_DISTANCE).py + best_line.get(0+BACKTRACK_DISTANCE).sy) - (best_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).py + best_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sy);
 						double dwsa = Math.atan2(ddsy, ddsx);
 						
 						System.err.println("wsa1 = " + wsa1*180/Math.PI);
@@ -1425,14 +1571,14 @@ public class Stegers_Algorithm implements PlugIn
 					else if(best_window == 1 && best_point == 2)
 					{
 						// calculate distance difference
-						double dspx = (wx1 + wsx1) - (best_line.get(best_line.size()-BACKTRACK-1).px + best_line.get(best_line.size()-BACKTRACK-1).sx);
-						double dspy = (wy1 + wsy1) - (best_line.get(best_line.size()-BACKTRACK-1).py + best_line.get(best_line.size()-BACKTRACK-1).sy);
+						double dspx = (wx1 + wsx1) - (best_line.get(best_line.size()-BACKTRACK_DISTANCE-1).px + best_line.get(best_line.size()-BACKTRACK_DISTANCE-1).sx);
+						double dspy = (wy1 + wsy1) - (best_line.get(best_line.size()-BACKTRACK_DISTANCE-1).py + best_line.get(best_line.size()-BACKTRACK_DISTANCE-1).sy);
 						
 						diff_distance = Math.sqrt(dspx*dspx+dspy*dspy);
 						
 						// calculate angle difference
-						double ddsx = (best_line.get(best_line.size()-BACKTRACK-1).px + best_line.get(best_line.size()-BACKTRACK-1).sx) - (best_line.get(best_line.size()-BACKTRACK-AVERAGE_LENGTH-2).px + best_line.get(best_line.size()-BACKTRACK-AVERAGE_LENGTH-2).sx);
-						double ddsy = (best_line.get(best_line.size()-BACKTRACK-1).py + best_line.get(best_line.size()-BACKTRACK-1).sy) - (best_line.get(best_line.size()-BACKTRACK-AVERAGE_LENGTH-2).py + best_line.get(best_line.size()-BACKTRACK-AVERAGE_LENGTH-2).sy);
+						double ddsx = (best_line.get(best_line.size()-BACKTRACK_DISTANCE-1).px + best_line.get(best_line.size()-BACKTRACK_DISTANCE-1).sx) - (best_line.get(best_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).px + best_line.get(best_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sx);
+						double ddsy = (best_line.get(best_line.size()-BACKTRACK_DISTANCE-1).py + best_line.get(best_line.size()-BACKTRACK_DISTANCE-1).sy) - (best_line.get(best_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).py + best_line.get(best_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sy);
 						double dwsa = Math.atan2(ddsy, ddsx);
 						
 						System.err.println("wsa1 = " + wsa1*180/Math.PI);
@@ -1449,14 +1595,14 @@ public class Stegers_Algorithm implements PlugIn
 					else if(best_window == 2 && best_point == 1)
 					{
 						// calculate distance difference
-						double dspx = (wx2 + wsx2) - (best_line.get(0+BACKTRACK).px + best_line.get(0+BACKTRACK).sx);
-						double dspy = (wy2 + wsy2) - (best_line.get(0+BACKTRACK).py + best_line.get(0+BACKTRACK).sy);
+						double dspx = (wx2 + wsx2) - (best_line.get(0+BACKTRACK_DISTANCE).px + best_line.get(0+BACKTRACK_DISTANCE).sx);
+						double dspy = (wy2 + wsy2) - (best_line.get(0+BACKTRACK_DISTANCE).py + best_line.get(0+BACKTRACK_DISTANCE).sy);
 						
 						diff_distance = Math.sqrt(dspx*dspx+dspy*dspy);
 						
 						// calculate angle difference
-						double ddsx = (best_line.get(0+BACKTRACK).px + best_line.get(0+BACKTRACK).sx) - (best_line.get(1+BACKTRACK+AVERAGE_LENGTH).px + best_line.get(1+BACKTRACK+AVERAGE_LENGTH).sx);
-						double ddsy = (best_line.get(0+BACKTRACK).py + best_line.get(0+BACKTRACK).sy) - (best_line.get(1+BACKTRACK+AVERAGE_LENGTH).py + best_line.get(1+BACKTRACK+AVERAGE_LENGTH).sy);
+						double ddsx = (best_line.get(0+BACKTRACK_DISTANCE).px + best_line.get(0+BACKTRACK_DISTANCE).sx) - (best_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).px + best_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sx);
+						double ddsy = (best_line.get(0+BACKTRACK_DISTANCE).py + best_line.get(0+BACKTRACK_DISTANCE).sy) - (best_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).py + best_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sy);
 						double dwsa = Math.atan2(ddsy, ddsx);
 						
 						System.err.println("wsa2 = " + wsa2*180/Math.PI);
@@ -1473,14 +1619,14 @@ public class Stegers_Algorithm implements PlugIn
 					else if(best_window == 2 && best_point == 2)
 					{
 						// calculate distance difference
-						double dspx = (wx2 + wsx2) - (best_line.get(best_line.size()-BACKTRACK-1).px + best_line.get(best_line.size()-BACKTRACK-1).sx);
-						double dspy = (wy2 + wsy2) - (best_line.get(best_line.size()-BACKTRACK-1).py + best_line.get(best_line.size()-BACKTRACK-1).sy);
+						double dspx = (wx2 + wsx2) - (best_line.get(best_line.size()-BACKTRACK_DISTANCE-1).px + best_line.get(best_line.size()-BACKTRACK_DISTANCE-1).sx);
+						double dspy = (wy2 + wsy2) - (best_line.get(best_line.size()-BACKTRACK_DISTANCE-1).py + best_line.get(best_line.size()-BACKTRACK_DISTANCE-1).sy);
 						
 						diff_distance = Math.sqrt(dspx*dspx+dspy*dspy);
 						
 						// calculate angle difference
-						double ddsx = (best_line.get(best_line.size()-BACKTRACK-1).px + best_line.get(best_line.size()-BACKTRACK-1).sx) - (best_line.get(best_line.size()-BACKTRACK-AVERAGE_LENGTH-2).px + best_line.get(best_line.size()-BACKTRACK-AVERAGE_LENGTH-2).sx);
-						double ddsy = (best_line.get(best_line.size()-BACKTRACK-1).py + best_line.get(best_line.size()-BACKTRACK-1).sy) - (best_line.get(best_line.size()-BACKTRACK-AVERAGE_LENGTH-2).py + best_line.get(best_line.size()-BACKTRACK-AVERAGE_LENGTH-2).sy);
+						double ddsx = (best_line.get(best_line.size()-BACKTRACK_DISTANCE-1).px + best_line.get(best_line.size()-BACKTRACK_DISTANCE-1).sx) - (best_line.get(best_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).px + best_line.get(best_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sx);
+						double ddsy = (best_line.get(best_line.size()-BACKTRACK_DISTANCE-1).py + best_line.get(best_line.size()-BACKTRACK_DISTANCE-1).sy) - (best_line.get(best_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).py + best_line.get(best_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sy);
 						double dwsa = Math.atan2(ddsy, ddsx);
 						
 						System.err.println("wsa2 = " + wsa2*180/Math.PI);
