@@ -1129,17 +1129,7 @@ public class Stegers_Algorithm implements PlugIn
 		
 		// *********************************************************************
 		
-		// RSLV: connect lines at/near junctions [5x5 search window]
-		
-		// *********************************************************************
-		
-		// TODO: connect lines at a slightly more global scale
-		// for each line
-		//   check both end point
-		//      extend window into direction of line (say 15 pixels long, 10 pixels wide)
-		//      if another lines endpoint is within reach
-		//         connect these two lines together
-		//         option: smooth out connection (i.e. drop first couple of points from endpoint)
+		// connect lines segments into larger lines
 		if(ENABLE_LINKING)
 		{
 //			if(DEBUG_MODE_ENABLED)
