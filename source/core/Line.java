@@ -110,30 +110,43 @@ public class Line extends LinkedList<Point>
 	// NOTE: start and end are inclusive
 	public double persistenceLength(int start, int end)
 	{
+		return persistenceLength(start, end, 1);
+	}
+	
+	public double persistenceLength(int start, int end, int interval)
+	{
 		// < cos ( theta ) > = exp ( - L_c / L_p )
 		// L_p = -L_c / ln( < cos ( theta ) > ); RSLV: cos ( theta ) can be negative?
 		// RSLv: prefer L_c / L_p
+		//double cos_theta_sum = 0.0;
+		//double cos_theta_squared_sum = 0.0;
 		double theta_sum = 0.0;
 		double theta_squared_sum = 0.0;
 		int count_n = 0;
-		for(int i = start; i <= end - 2; ++i)
+		for(int i = start; i <= end - 2*interval; i+=interval)
 		{
 			// dot product
-			double[] v1 = segmentVector(i, true); // NOTE: normalized
-			double[] v2 = segmentVector(i+1, true); // NOTE: normalized
-			double theta_cos = v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2];
-			// RLSV: theta_cos = Math.abs(theta_cos)?
-			theta_sum += theta_cos;
-			theta_squared_sum += theta_cos * theta_cos;
-			++count_n
+			double[] v1 = segmentVector(i, true, interval); // NOTE: normalized
+			double[] v2 = segmentVector(i+interval, true, interval); // NOTE: normalized
+			double cos_theta = v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2];
+			double theta = Math.acos(cos_theta);
+			theta_sum += theta;
+			theta_squared_sum += theta * theta;
+			//cos_theta_sum += theta_cos;
+			//cos_theta_squared_sum += cos_theta * cos_theta;
+			++count_n;
 		}
-		double theta_mean = theta_sum / count_n; // RSLV: count_n = start - end - (2|1)
+		//double cos_theta_mean = cos_theta_sum / count_n;
+		//double cos_theta_var = (cos_theta_squared_sum / count_n) - cos_theta_mean*cos_theta_mean;
+		//double cos_theta_stdev = Math.sqrt(cos_theta_var);
+		double theta_mean = theta_sum / count_n;
 		double theta_var = (theta_squared_sum / count_n) - theta_mean*theta_mean;
 		//double theta_stdev = Math.sqrt(theta_var);
 		double lc = contourLength(start, end);
-		double ls = lc / ls; // approximately / average segment length
+		double ls = lc / count_n; // average segment length
+		return (2*ls) / theta_var; // stdev = Math.sqrt(2 * ls / lp) => lp = (2 * ls) / stdev^2 = 2*ls / var; NOTE: this is for 2D persistence length!
 		//return (-lc / Math.log(theta_mean));
-		return (2*ls) / theta_var; // stdev = Math.sqrt(2 * ls / lp) => lp = (2 * ls) / stdev^2 = 2*ls / var
+		
 	}
 	
 	// NOTE: get vector of segment (index,index+1)
@@ -145,8 +158,13 @@ public class Line extends LinkedList<Point>
 	
 	public double[] segmentVector(int index, boolean normalize)
 	{
+		return segmentVector(index, normalize, 1);
+	}
+	
+	public double[] segmentVector(int index, boolean normalize, int interval)
+	{
 		Point p1 = this.get(index);
-		Point p2 = this.get(index+1);
+		Point p2 = this.get(index+interval);
 		double dx = (p2.px+p2.sx) - (p1.px+p1.sx);
 		double dy = (p2.py+p2.sy) - (p1.py+p1.sy);
 		double dz = (p2.pz+p2.sz) - (p1.pz+p1.sz);

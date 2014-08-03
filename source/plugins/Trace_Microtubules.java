@@ -776,7 +776,6 @@ public class Trace_Microtubules implements PlugIn
 		IJ.showStatus("Fitting Gaussian line profiles to pixels");
 		
 		//ImageProcessor fitting_ip = ip_original;
-		//if(FIT_ON_RAW_IMAGE) // TODO: implement choice
 		double[][][] fitting_results = new double[image_width][image_height][4]; // [x][y][bg=0|amp=1|mu=2|sigma=3]
 		double[][][] standard_error_fit_results = new double[image_width][image_height][4]; // [x][y][bg=0|amp=1|mu=2|sigma=3]
 		double[][] chi_squared_fit_results = new double[image_width][image_height];
@@ -790,7 +789,6 @@ public class Trace_Microtubules implements PlugIn
 				double cy = py;
 				double nx = results_step_3[px][py][1];
 				double ny = results_step_3[px][py][2];
-				//double theta = Math.atan2(ny, nx); // RSLV: add rotation as parameter for more optimal fit than Hessian can produce?
 				
 				// extract line profile data from *original* image
 				ip.setInterpolationMethod(INTERPOLATION_METHOD);
@@ -948,7 +946,7 @@ public class Trace_Microtubules implements PlugIn
 				}
 				
 				// filter on sigma
-				if(FILTER_ON_SIGMA && (fitting_results[px][py][3] < SIGMA_RATIO_LOWER_THRESHOLD * SIGMA || fitting_results[px][py][3] > SIGMA_RATIO_UPPER_THRESHOLD * SIGMA)) // RSLV: use scale space sigma? Or fixed SIGMA?
+				if(FILTER_ON_SIGMA && (fitting_results[px][py][3] < SIGMA_RATIO_LOWER_THRESHOLD * SIGMA || fitting_results[px][py][3] > SIGMA_RATIO_UPPER_THRESHOLD * SIGMA))
 				{
 					// probably not a valid center line pixel; skip
 					filtered = true; //continue;
