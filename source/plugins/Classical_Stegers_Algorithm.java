@@ -60,7 +60,8 @@ public class Classical_Stegers_Algorithm implements PlugIn
 	public static double SIGMA = 1.8;
 	public static double LINEPOINT_THRESHOLD = 0.5;
 	
-	public static boolean USE_GAUSSIAN_FIT_PEAKS = false;
+	public static boolean USE_GAUSSIAN_FIT_PEAKS_BEFORE = false;
+	public static boolean USE_GAUSSIAN_FIT_PEAKS_AFTER = false;
 	public static final int LMA_NUM_ITERATIONS = 5;
 	public static final double LMA_DEFAULT_LAMBDA = 0.001;
 	
@@ -109,8 +110,9 @@ public class Classical_Stegers_Algorithm implements PlugIn
 		GenericDialog gd = new GenericDialog("Steger's algorithm");
 		
 		gd.addNumericField("Sigma", Prefs.get("stegers.sigma", SIGMA), 2);
-		gd.addNumericField("Linepoint_threshold", Prefs.get("stegers.linepoint_threshold", LINEPOINT_THRESHOLD), 2);
-		gd.addCheckbox("Use_Gaussian_fit_peaks", Prefs.get("stegers.use_gaussian_fit_peaks", USE_GAUSSIAN_FIT_PEAKS));
+		gd.addNumericField("Linepoint_threshold", Prefs.get("stegers.linepoint_threshold", LINEPOINT_THRESHOLD), 3);
+		gd.addCheckbox("Use_gaussian_fit_peaks_before", Prefs.get("stegers.use_gaussian_fit_peaks_before", USE_GAUSSIAN_FIT_PEAKS_BEFORE));
+		gd.addCheckbox("Use_gaussian_fit_peaks_after", Prefs.get("stegers.use_gaussian_fit_peaks_after", USE_GAUSSIAN_FIT_PEAKS_AFTER));
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
@@ -155,7 +157,9 @@ public class Classical_Stegers_Algorithm implements PlugIn
 		// retrieve parameters
 		SIGMA = gd.getNextNumber();
 		LINEPOINT_THRESHOLD = gd.getNextNumber();
-		USE_GAUSSIAN_FIT_PEAKS = gd.getNextBoolean();
+		
+		USE_GAUSSIAN_FIT_PEAKS_BEFORE = gd.getNextBoolean();
+		USE_GAUSSIAN_FIT_PEAKS_AFTER = gd.getNextBoolean();
 		
 		USE_PRESET_USER_THRESHOLDS = gd.getNextBoolean();
 		UPPER_THRESHOLD = gd.getNextNumber();
@@ -183,7 +187,8 @@ public class Classical_Stegers_Algorithm implements PlugIn
 		// store parameters in preferences
 		Prefs.set("stegers.sigma", SIGMA);
 		Prefs.set("stegers.linepoint_threshold", LINEPOINT_THRESHOLD);
-		Prefs.set("stegers.use_gaussian_fit_peaks", USE_GAUSSIAN_FIT_PEAKS);
+		Prefs.set("stegers.use_gaussian_fit_peaks_before", USE_GAUSSIAN_FIT_PEAKS_BEFORE);
+		Prefs.set("stegers.use_gaussian_fit_peaks_after", USE_GAUSSIAN_FIT_PEAKS_AFTER);
 		Prefs.set("stegers.preset_user_thresholds", USE_PRESET_USER_THRESHOLDS);
 		Prefs.set("stegers.upper_threshold", UPPER_THRESHOLD);
 		Prefs.set("stegers.lower_threshold", LOWER_THRESHOLD);
@@ -346,7 +351,7 @@ public class Classical_Stegers_Algorithm implements PlugIn
 		// ---------------------------------------------------------------------
 		
 		// STEP: override Taylor peak estimation with Gaussian peak fit
-		if(USE_GAUSSIAN_FIT_PEAKS)
+		if(USE_GAUSSIAN_FIT_PEAKS_BEFORE)
 		{
 			Profiling.tic();
 			IJ.showStatus("Fitting Gaussian line profiles to pixels");
@@ -408,11 +413,11 @@ public class Classical_Stegers_Algorithm implements PlugIn
 					line_points[px][py][7] = fitted_parameters[2]*ny;
 				}
 			}
-			Profiling.toc("Step 3: Fitting line profiles");
+			Profiling.toc("Fitting line profiles");
 		}
 		else
 		{
-			IJ.showStatus("Skipping step 3: fitting line profiles");
+			IJ.showStatus("Skipping step: fitting line profiles");
 		}
 		
 		// *********************************************************************
@@ -466,6 +471,78 @@ public class Classical_Stegers_Algorithm implements PlugIn
 		}
 		
 		// *********************************************************************
+		
+		// STEP: override Taylor peak estimation with Gaussian peak fit
+		if(USE_GAUSSIAN_FIT_PEAKS_AFTER)
+		{
+			Profiling.tic();
+			IJ.showStatus("Fitting Gaussian line profiles to pixels");
+			
+			for(int py = 0; py < image_height; ++py)
+			{
+				for(int px = 0; px < image_width; ++px)
+				{
+					// get center pixel and vector orientation from previous step
+					double cx = px;
+					double cy = py;
+					double nx = line_points[px][py][1];
+					double ny = line_points[px][py][2];
+					
+					// extract line profile data from *original* image
+					ip.setInterpolationMethod(ImageProcessor.BILINEAR);
+					int line_profile_width = (int)Math.ceil(3*SIGMA); // RSLV: 3*sigma minimum? Currently using ceil!
+					int data_points = 2*line_profile_width+1;
+					double[] x_data = new double[data_points];
+					double[] y_data = new double[data_points];
+					double min_value = Double.MAX_VALUE; // keep track of minimum value
+					double max_value = Double.MIN_VALUE; // keep track of maximum value
+					double mean_value = 0.0;
+					 int ii = -line_profile_width;
+					for(int i = 0; i < data_points; ++i)
+					{
+						// interpolated x,y
+						double ix = cx + ii * nx;
+						double iy = cy + ii * ny;
+						double pv = ip.getPixelInterpolated(ix, iy); // NOTE: *original* image!
+						x_data[i] = ii; // NOTE use relative x-coordinate!!
+						y_data[i] = pv;
+						
+						// update min/max value
+						min_value = Math.min(min_value, pv);
+						max_value = Math.max(max_value, pv);
+						mean_value += pv;
+						
+						// increment ii
+						++ii;
+					}
+					mean_value /= data_points;
+					
+					// initial parameter estimation
+					double background = min_value;
+					double amplitude = max_value - min_value;
+					double mu = 0; // 0 = center in relative coordinate system
+					double sig = SIGMA;
+					double[] initial_parameters = new double[]{background, amplitude, mu, sig};
+					
+					// set up new LMA instance
+					LevenbergMarquardt lma = new LevenbergMarquardt();
+					
+					// run LMA fitting procedure
+					double[] fitted_parameters = lma.run(x_data, y_data, data_points, initial_parameters, LMA_NUM_ITERATIONS, LMA_DEFAULT_LAMBDA);
+					
+					// store result of fitting: only peak information
+					line_points[px][py][6] = fitted_parameters[2]*nx;
+					line_points[px][py][7] = fitted_parameters[2]*ny;
+				}
+			}
+			Profiling.toc("Fitting line profiles");
+		}
+		else
+		{
+			IJ.showStatus("Skipping step: fitting line profiles");
+		}
+		
+		// ---------------------------------------------------------------------
 		
 		// STEP: get user threshold levels (interactive)
 		if(!USE_PRESET_USER_THRESHOLDS)
