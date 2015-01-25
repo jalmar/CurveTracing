@@ -5,6 +5,7 @@ package filters;
 import ij.IJ.*;
 import ij.process.ImageProcessor;
 import ij.process.FloatProcessor;
+//import ij.ImagePlus;
 
 
 /**
@@ -703,6 +704,10 @@ public class DerivativeOfGaussian
 		}
 		
 		// return normalized kernel
+//		ImageProcessor kernel_ip = kernelToImage(kernel);
+//		ImagePlus kernel_imp = new ImagePlus("normalized kernel", kernel_ip);
+//		kernel_imp.resetDisplayRange();
+//		kernel_imp.show();
 		return kernel;
 	}
 	

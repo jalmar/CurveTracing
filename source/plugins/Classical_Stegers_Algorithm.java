@@ -1135,7 +1135,7 @@ public class Classical_Stegers_Algorithm implements PlugIn
 		{
 			ImagePlus processing_map_imp = new ImagePlus("Processing map", processing_map_ip);
 			processing_map_imp.setDisplayRange(0,4); // NOTE: keep up to date with number of processing types
-			processing_map_imp.show();
+//			processing_map_imp.show();
 		}
 		
 		// *********************************************************************
@@ -1146,7 +1146,7 @@ public class Classical_Stegers_Algorithm implements PlugIn
 			Vector<Line> new_lines = new Vector<Line>();
 			for(Line l : lines)
 			{
-				if(l != null && l.size() >= LINE_LENGTH_THRESHOLD)
+				if(l != null && l.contourLength() >= LINE_LENGTH_THRESHOLD)
 				{
 					new_lines.add(l);
 				}
@@ -1184,7 +1184,7 @@ public class Classical_Stegers_Algorithm implements PlugIn
 		for(Line l : lines)
 		{
 			// skip empty lines
-			if(l == null || l.size() == 0) continue;
+			if(l == null || l.size() < 3) continue;
 			
 			// add origin marker to overlay
 			OvalRoi origin_p = new OvalRoi(l.getFirst().px + 0.375, l.getFirst().py + 0.375, 0.25, 0.25);
@@ -1233,12 +1233,12 @@ public class Classical_Stegers_Algorithm implements PlugIn
 			ImagePlus overlay_imp = new ImagePlus("Steger's algorithm line traces", overlay_ip);
 			overlay_imp.setOverlay(lines_overlay);
 			//overlay.updateAndRepaintWindow();
-			overlay_imp.show();
+//			overlay_imp.show();
 			
 			ImagePlus overlay2_imp = new ImagePlus("Steger's algorithm line traces", overlay2_ip);
 			overlay2_imp.setOverlay(lines_overlay);
 			//overlay.updateAndRepaintWindow();
-			overlay2_imp.show();
+//			overlay2_imp.show();
 			
 			LUT rainbow_lut = ConnectedComponents.getConnectedComponentLUT();
 			pixelated_traces_ip.setLut(rainbow_lut);
@@ -1251,7 +1251,7 @@ public class Classical_Stegers_Algorithm implements PlugIn
 		roi_manager.toFront();
 		
 		// calculate statistics on line segments
-		ResultsTable results_table = ResultsTable.getResultsTable();
+/*		ResultsTable results_table = ResultsTable.getResultsTable();
 		results_table.reset();
 		for(Line l : lines)
 		{
@@ -1268,7 +1268,7 @@ public class Classical_Stegers_Algorithm implements PlugIn
 		}
 		results_table.showRowNumbers(true);
 		results_table.show("Results");
-		
+*/		
 		// RSLV: return image with overlay?
 		return null;
 	}
