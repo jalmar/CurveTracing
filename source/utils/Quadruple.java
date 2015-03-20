@@ -3,32 +3,35 @@ package utils;
 /**
  *	Note: class implementation adapted from http://stackoverflow.com/questions/156275/what-is-the-equivalent-of-the-c-pairl-r-in-java and http://stackoverflow.com/questions/2670982/using-pairs-or-2-tuples-in-java
  */
-public class Triple<A, B, C>
+public class Quadruple<A, B, C, D>
 {
 	// members
 	private A first;
 	private B second;
 	private C third;
+	private D fourth;
 	
 	// *************************************************************************
 	
 	// constructor
-	public Triple()
+	public Quadruple()
 	{
 		super();
 		this.first = null;
 		this.second = null;
 		this.third = null;
+		this.fourth = null;
 	}
 	
 	// NOTE: cannot do single argument constructor in case type A == type B
 	
-	public Triple(A first, B second, C third)
+	public Quadruple(A first, B second, C third, D fourth)
 	{
 		super();
 		this.first = first;
 		this.second = second;
 		this.third = third;
+		this.fourth = fourth;
 	}
 	
 	// *************************************************************************
@@ -63,6 +66,16 @@ public class Triple<A, B, C>
 		this.third = third;
 	}
 	
+	public D getFourth()
+	{
+		return this.fourth;
+	}
+	
+	public void setFourth(D fourth)
+	{
+		this.fourth = fourth;
+	}
+	
 	// *************************************************************************
 	
 	@Override
@@ -70,8 +83,9 @@ public class Triple<A, B, C>
 		int hashFirst = this.first != null ? this.first.hashCode() : 0;
 		int hashSecond = this.second != null ? this.second.hashCode() : 0;
 		int hashThird = this.third != null ? this.third.hashCode() : 0;
+		int hashFourth = this.fourth != null ? this.fourth.hashCode() : 0;
 		
-		return (hashFirst + hashSecond + hashThird) * hashThird + (hashFirst + hashSecond) * hashSecond + hashFirst;
+		return (hashFirst + hashSecond + hashThird + hashFourth) * hashFourth + (hashFirst + hashSecond + hashThird) * hashThird + (hashFirst + hashSecond) * hashSecond + hashFirst;
 		
 		//final int prime = 31;
 		//int result = 1;
@@ -83,18 +97,22 @@ public class Triple<A, B, C>
 	@Override
 	public boolean equals(Object other)
 	{
-		if (other instanceof Triple) {
-			Triple otherTriple = (Triple) other;
+		if (other instanceof Quadruple) {
+			Quadruple otherQuadruple = (Quadruple) other;
 			return 
-			((  this.first == otherTriple.first ||
-				( this.first != null && otherTriple.first != null &&
-				  this.first.equals(otherTriple.first))) &&
-			 (	this.second == otherTriple.second ||
-				( this.second != null && otherTriple.second != null &&
-				  this.second.equals(otherTriple.second))) &&
-			 (	this.third == otherTriple.third ||
-				( this.third != null && otherTriple.third != null &&
-				  this.third.equals(otherTriple.third))) );
+			((  this.first == otherQuadruple.first ||
+				( this.first != null && otherQuadruple.first != null &&
+				  this.first.equals(otherQuadruple.first))) &&
+			 (	this.second == otherQuadruple.second ||
+				( this.second != null && otherQuadruple.second != null &&
+				  this.second.equals(otherQuadruple.second))) &&
+			 (	this.third == otherQuadruple.third ||
+				( this.third != null && otherQuadruple.third != null &&
+				  this.third.equals(otherQuadruple.third))) &&
+			 (	this.fourth == otherQuadruple.fourth ||
+				( this.fourth != null && otherQuadruple.fourth != null &&
+				  this.fourth.equals(otherQuadruple.fourth)))
+			);
 		}
 		
 		return false;
@@ -102,6 +120,6 @@ public class Triple<A, B, C>
 	
 	public String toString()
 	{ 
-		return "(" + this.first + ", " + this.second + ", " + this.third + ")"; 
+		return "(" + this.first + ", " + this.second + ", " + this.third + ", " + this.fourth + ")"; 
 	}
 }
