@@ -1,4 +1,5 @@
-package util;
+
+package utils;
 
 /**
  *	Note: class implementation adapted from http://stackoverflow.com/questions/156275/what-is-the-equivalent-of-the-c-pairl-r-in-java and http://stackoverflow.com/questions/2670982/using-pairs-or-2-tuples-in-java
@@ -6,8 +7,8 @@ package util;
 public class Tuple<A, B>
 {
 	// members
-	private A first;
-	private B second;
+	public A first;
+	public B second;
 	
 	// *************************************************************************
 	
