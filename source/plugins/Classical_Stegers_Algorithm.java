@@ -107,7 +107,7 @@ public class Classical_Stegers_Algorithm implements PlugIn
 		if(null == imp) return;
 		
 		// ask for parameters
-		GenericDialog gd = new GenericDialog("Steger's algorithm");
+		GenericDialog gd = new GenericDialog("Classical Steger's algorithm");
 		
 		gd.addNumericField("Sigma", Prefs.get("stegers.sigma", SIGMA), 2);
 		gd.addNumericField("Linepoint_threshold", Prefs.get("stegers.linepoint_threshold", LINEPOINT_THRESHOLD), 3);

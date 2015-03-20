@@ -65,7 +65,7 @@ import core.Line;
 /**
  *	Microtubule tracing algorithm
  */
-public class Trace_Microtubules implements PlugIn
+public class Trace_Microtubules_Linking implements PlugIn
 {
 	/**
 	 *	Parameters
@@ -136,7 +136,7 @@ public class Trace_Microtubules implements PlugIn
 	/**
 	 *
 	 */
-	public Trace_Microtubules()
+	public Trace_Microtubules_Linking()
 	{
 		/* nothing */
 	}
@@ -150,7 +150,7 @@ public class Trace_Microtubules implements PlugIn
 		if(imp == null) return;
 		
 		// show dialog with options
-		GenericDialog gd = new GenericDialog("Trace microtubules");
+		GenericDialog gd = new GenericDialog("Trace microtubules with Linking");
 		gd.addNumericField("PSF_sigma", Prefs.get("mt_trace.psf_sigma", SIGMA), 2);
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups

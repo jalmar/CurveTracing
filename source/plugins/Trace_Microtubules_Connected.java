@@ -166,7 +166,7 @@ public class Trace_Microtubules_Connected implements PlugIn
 		if(imp == null) return;
 		
 		// show dialog with options
-		GenericDialog gd = new GenericDialog("Trace microtubules");
+		GenericDialog gd = new GenericDialog("Trace microtubules Eight-Connected");
 		gd.addNumericField("PSF_sigma", Prefs.get("mt_trace.psf_sigma", SIGMA), 2);
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
