@@ -5,7 +5,6 @@ package plugins;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Vector;
-import java.util.Map;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.awt.Color;
@@ -66,7 +65,7 @@ import core.Line;
 /**
  *	Microtubule tracing algorithm
  */
-public class Trace_Microtubules implements PlugIn
+public class Trace_Microtubules_Connected implements PlugIn
 {
 	/**
 	 *	Parameters
@@ -108,16 +107,26 @@ public class Trace_Microtubules implements PlugIn
 	// additional filtering
 	public static boolean FILTER_HIT_MAP = true;
 	public static int VALID_LINE_POINT_THRESHOLD = 2;
-//	public static boolean SKELETONIZE_VALID_LINE_POINTS_MAP = true;
-//	public static boolean FILTER_JUNCTION_POINTS = true;
-//	public static boolean FILTER_SINGLE_PIXEL_ISLETS = true;
+	public static boolean SKELETONIZE_VALID_LINE_POINTS_MAP = true;
+	public static boolean FILTER_JUNCTION_POINTS = true;
+	public static boolean FILTER_SINGLE_PIXEL_ISLETS = true;
+	public static int LINE_LENGTH_THRESHOLD = 5;
 	
 	// tracing
-	public static boolean USE_GAUSSIAN_FIT_PEAKS = true;
-	public static double WEIGHT_HIT_COUNT = 2.0;
-	public static double WEIGHT_R_SQUARED = 3.0;
-	public static double WEIGHT_DISTANCE = 1.0;
-	public static double WEIGHT_ORIENTATION = 2.0;
+	public static boolean USE_PRESET_USER_THRESHOLDS = false;
+	public static double UPPER_THRESHOLD = 5000.0;
+	public static double LOWER_THRESHOLD = 1000.0;
+	
+	public static boolean FILTER_MULTIRESPONSE = true;
+	public static double MULTIRESPONSE_THRESHOLD = 360.0 / 18;
+	
+	public static boolean PREVENT_SPLINTER_FRAGMENTS = true;
+	public static int SPLINTER_FRAGMENT_THRESHOLD = 5;
+	
+	public static boolean INCLUDE_JUNCTIONS_IN_LINE = true;
+	public static boolean INCLUDE_FIRST_PROCESSED_IN_LINE = true;
+	
+	public static double COST_FUNCTION_WEIGHT = 1.0;
 	
 	// linking
 	public static boolean ENABLE_LINKING = true;
@@ -131,9 +140,6 @@ public class Trace_Microtubules implements PlugIn
 //	public static double ANISOTROPY_FACTOR = 5;
 //	public static int ODF_PEAK_WIDTH = 5;
 	
-	// additional filtering
-	public static int LINE_LENGTH_THRESHOLD = 5;
-	
 	// debug mode
 	public static boolean DEBUG_MODE_ENABLED = true;
 	public static boolean USE_WEIGHTED_AVERAGES = true;
@@ -143,12 +149,10 @@ public class Trace_Microtubules implements PlugIn
 	public static boolean USE_VECTOR_NORMALS = true;
 	public static boolean USE_TRANSPARENCY = true;
 	
-	public static int SLICE_INDEX = -1;
-	
 	/**
 	 *
 	 */
-	public Trace_Microtubules()
+	public Trace_Microtubules_Connected()
 	{
 		/* nothing */
 	}
@@ -190,21 +194,33 @@ public class Trace_Microtubules implements PlugIn
 		
 		gd.addCheckbox("Filter_hit_map", Prefs.get("mt_trace.filter_hit_map", FILTER_HIT_MAP));
 		gd.addNumericField("Valid_line_point_threshold", Prefs.get("mt_trace.valid_line_point_threshold", VALID_LINE_POINT_THRESHOLD), 0);
-//		gd.addCheckbox("Skeletonize_valid_line_points_map", Prefs.get("mt_trace.skeletonize_valid_line_points_map", SKELETONIZE_VALID_LINE_POINTS_MAP));
-//		gd.addCheckbox("Filter_junction_points", Prefs.get("mt_trace.filter_junction_points", FILTER_JUNCTION_POINTS));
-//		gd.addCheckbox("Filter_single_pixel_islets", Prefs.get("mt_trace.filter_single_pixel_islets", FILTER_SINGLE_PIXEL_ISLETS));
-		
-		gd.setInsets(10, 20, 0); // seperate parameter groups
-		
-		gd.addCheckbox("Use_Gaussian_fit_peaks", Prefs.get("mt_trace.use_gaussian_fit_peaks", USE_GAUSSIAN_FIT_PEAKS));
-		gd.addNumericField("Hit_count_weight", Prefs.get("mt_trace.weight_hit_count", WEIGHT_HIT_COUNT), 3);
-		gd.addNumericField("R_squared_weight", Prefs.get("mt_trace.weight_r_squared", WEIGHT_R_SQUARED), 3);
-		gd.addNumericField("Distance_weight", Prefs.get("mt_trace.weight_distance", WEIGHT_DISTANCE), 3);
-		gd.addNumericField("Orientation_weight", Prefs.get("mt_trace.weight_orientation", WEIGHT_ORIENTATION), 3);
+		gd.addCheckbox("Skeletonize_valid_line_points_map", Prefs.get("mt_trace.skeletonize_valid_line_points_map", SKELETONIZE_VALID_LINE_POINTS_MAP));
+		gd.addCheckbox("Filter_junction_points", Prefs.get("mt_trace.filter_junction_points", FILTER_JUNCTION_POINTS));
+		gd.addCheckbox("Filter_single_pixel_islets", Prefs.get("mt_trace.filter_single_pixel_islets", FILTER_SINGLE_PIXEL_ISLETS));
+		gd.addNumericField("Line_length_lower_threshold", Prefs.get("mt_trace.line_length_lower_threshold", LINE_LENGTH_THRESHOLD), 0);
 		
 //		gd.setInsets(10, 20, 0); // seperate parameter groups
 //		
-//		gd.addCheckbox("Enable_linking", Prefs.get("mt_trace.enable_linking", //ENABLE_LINKING));
+//		gd.addCheckbox("Use_preset_user_thresholds", Prefs.get("mt_trace.preset_user_thresholds", USE_PRESET_USER_THRESHOLDS));
+//		gd.addNumericField("Upper_threshold", Prefs.get("mt_trace.upper_threshold", UPPER_THRESHOLD), 0);
+//		gd.addNumericField("Lower_threshold", Prefs.get("mt_trace.lower_threshold", LOWER_THRESHOLD), 0);
+//		
+//		gd.setInsets(10, 20, 0); // seperate parameter groups
+//		
+//		gd.addCheckbox("Filter_multiresponse", Prefs.get("mt_trace.filter_multiresponse", FILTER_MULTIRESPONSE));
+//		gd.addNumericField("Multireponse_angle_threshold", Prefs.get("mt_trace.multiresponse_threshold", MULTIRESPONSE_THRESHOLD), 2);
+//		
+//		gd.addCheckbox("Prevent_splinter_fragments", Prefs.get("mt_trace.prevent_splinter_fragments", PREVENT_SPLINTER_FRAGMENTS));
+//		gd.addNumericField("Splinter_fragment_threshold", Prefs.get("mt_trace.splinter_fragment_threshold", SPLINTER_FRAGMENT_THRESHOLD), 0);
+//		
+//		gd.addCheckbox("Include_junctions", Prefs.get("mt_trace.include_junctions", INCLUDE_JUNCTIONS_IN_LINE));
+//		gd.addCheckbox("Include_first_processed", Prefs.get("mt_trace.include_first_processed", INCLUDE_FIRST_PROCESSED_IN_LINE));
+//		
+//		gd.addNumericField("Cost_funtion_weight", Prefs.get("mt_trace.cost_function_weight", COST_FUNCTION_WEIGHT), 2);
+//		
+//		gd.setInsets(10, 20, 0); // seperate parameter groups
+//		
+//		gd.addCheckbox("Enable_linking", Prefs.get("mt_trace.enable_linking", ENABLE_LINKING));
 //		gd.addNumericField("Search_distance", Prefs.get("mt_trace.search_distance", SEARCH_DISTANCE), 1);
 //		gd.addNumericField("Backtrack_distance", Prefs.get("mt_trace.backtrack_distance", BACKTRACK_DISTANCE), 0);
 //		gd.addNumericField("Averaging_distance", Prefs.get("mt_trace.averaging_distance", AVERAGING_DISTANCE), 0);
@@ -214,10 +230,6 @@ public class Trace_Microtubules implements PlugIn
 //		gd.addNumericField("Angular_resolution", Prefs.get("mt_trace.angular_resolution", ANGULAR_RESOLUTION), 1);
 //		gd.addNumericField("Anisotropy_factor", Prefs.get("mt_trace.anisotropy_factor", ANISOTROPY_FACTOR), 1);
 //		gd.addNumericField("ODF_peak_width", Prefs.get("mt_trace.odf_peak_width", ODF_PEAK_WIDTH), 0);
-		
-		gd.setInsets(10, 20, 0); // seperate parameter groups
-		
-		gd.addNumericField("Line_length_lower_threshold", Prefs.get("mt_trace.line_length_lower_threshold", LINE_LENGTH_THRESHOLD), 0);
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
@@ -255,15 +267,25 @@ public class Trace_Microtubules implements PlugIn
 		
 		FILTER_HIT_MAP = gd.getNextBoolean();
 		VALID_LINE_POINT_THRESHOLD = (int)gd.getNextNumber();
-//		SKELETONIZE_VALID_LINE_POINTS_MAP = gd.getNextBoolean();
-//		FILTER_JUNCTION_POINTS = gd.getNextBoolean();
-//		FILTER_SINGLE_PIXEL_ISLETS = gd.getNextBoolean();
+		SKELETONIZE_VALID_LINE_POINTS_MAP = gd.getNextBoolean();
+		FILTER_JUNCTION_POINTS = gd.getNextBoolean();
+		FILTER_SINGLE_PIXEL_ISLETS = gd.getNextBoolean();
+		LINE_LENGTH_THRESHOLD = (int)gd.getNextNumber();
 		
-		USE_GAUSSIAN_FIT_PEAKS = gd.getNextBoolean();
-		WEIGHT_HIT_COUNT = gd.getNextNumber();
-		WEIGHT_R_SQUARED = gd.getNextNumber();
-		WEIGHT_DISTANCE = gd.getNextNumber();
-		WEIGHT_ORIENTATION = gd.getNextNumber();
+//		USE_PRESET_USER_THRESHOLDS = gd.getNextBoolean();
+//		UPPER_THRESHOLD = gd.getNextNumber();
+//		LOWER_THRESHOLD = gd.getNextNumber();
+		
+//		FILTER_MULTIRESPONSE = gd.getNextBoolean();
+//		MULTIRESPONSE_THRESHOLD = gd.getNextNumber();
+		
+//		PREVENT_SPLINTER_FRAGMENTS = gd.getNextBoolean();
+//		SPLINTER_FRAGMENT_THRESHOLD = (int)gd.getNextNumber();
+		
+//		INCLUDE_JUNCTIONS_IN_LINE = gd.getNextBoolean();
+//		INCLUDE_FIRST_PROCESSED_IN_LINE = gd.getNextBoolean();
+		
+//		COST_FUNCTION_WEIGHT = gd.getNextNumber();
 		
 //		ENABLE_LINKING = gd.getNextBoolean();
 //		SEARCH_DISTANCE = gd.getNextNumber();
@@ -274,8 +296,6 @@ public class Trace_Microtubules implements PlugIn
 //		ODF_STEPS = (int)(180.0 / ANGULAR_RESOLUTION); // NOTE: also update ODF_STEPS
 //		ANISOTROPY_FACTOR = gd.getNextNumber();
 //		ODF_PEAK_WIDTH = (int)gd.getNextNumber();
-		
-		LINE_LENGTH_THRESHOLD = (int)gd.getNextNumber();
 		
 		DEBUG_MODE_ENABLED = gd.getNextBoolean();
 		USE_WEIGHTED_AVERAGES = gd.getNextBoolean();
@@ -306,15 +326,22 @@ public class Trace_Microtubules implements PlugIn
 		
 		Prefs.set("mt_trace.filter_hit_map", FILTER_HIT_MAP);
 		Prefs.set("mt_trace.valid_line_point_threshold", VALID_LINE_POINT_THRESHOLD);
-//		Prefs.set("mt_trace.skeletonize_valid_line_points_map", SKELETONIZE_VALID_LINE_POINTS_MAP);
-//		Prefs.set("mt_trace.filter_junction_points", FILTER_JUNCTION_POINTS);
-//		Prefs.set("mt_trace.filter_single_pixel_islets", FILTER_SINGLE_PIXEL_ISLETS);
+		Prefs.set("mt_trace.skeletonize_valid_line_points_map", SKELETONIZE_VALID_LINE_POINTS_MAP);
+		Prefs.set("mt_trace.filter_junction_points", FILTER_JUNCTION_POINTS);
+		Prefs.set("mt_trace.filter_single_pixel_islets", FILTER_SINGLE_PIXEL_ISLETS);
+		Prefs.set("mt_trace.line_length_lower_threshold", LINE_LENGTH_THRESHOLD);
 		
-		Prefs.set("mt_trace.use_gaussian_fit_peaks", USE_GAUSSIAN_FIT_PEAKS);
-		Prefs.set("mt_trace.weight_hit_count", WEIGHT_HIT_COUNT);
-		Prefs.set("mt_trace.weight_r_squared", WEIGHT_R_SQUARED);
-		Prefs.set("mt_trace.weight_distance", WEIGHT_DISTANCE);
-		Prefs.set("mt_trace.weight_orientation", WEIGHT_ORIENTATION);
+//		Prefs.set("mt_trace.preset_user_thresholds", USE_PRESET_USER_THRESHOLDS);
+//		Prefs.set("mt_trace.upper_threshold", UPPER_THRESHOLD);
+//		Prefs.set("mt_trace.lower_threshold", LOWER_THRESHOLD);
+//		Prefs.set("mt_trace.filter_multiresponse", FILTER_MULTIRESPONSE);
+//		Prefs.set("mt_trace.multiresponse_threshold", MULTIRESPONSE_THRESHOLD);
+//		Prefs.set("mt_trace.prevent_splinter_fragments", PREVENT_SPLINTER_FRAGMENTS);
+//		Prefs.set("mt_trace.splinter_fragment_threshold", SPLINTER_FRAGMENT_THRESHOLD);
+		
+//		Prefs.set("mt_trace.include_junctions", INCLUDE_JUNCTIONS_IN_LINE);
+//		Prefs.set("mt_trace.include_first_processed", INCLUDE_FIRST_PROCESSED_IN_LINE);
+//		Prefs.set("mt_trace.cost_function_weight", COST_FUNCTION_WEIGHT);
 		
 //		Prefs.set("mt_trace.enable_linking", ENABLE_LINKING);
 //		Prefs.set("mt_trace.search_distance", SEARCH_DISTANCE);
@@ -324,8 +351,6 @@ public class Trace_Microtubules implements PlugIn
 //		Prefs.set("mt_trace.angular_resolution", ANGULAR_RESOLUTION);
 //		Prefs.set("mt_trace.anisotropy_factor", ANISOTROPY_FACTOR);
 //		Prefs.set("mt_trace.odf_peak_width", ODF_PEAK_WIDTH);
-		
-		Prefs.set("mt_trace.line_length_lower_threshold", LINE_LENGTH_THRESHOLD);
 		
 		Prefs.set("mt_trace.debug_mode", DEBUG_MODE_ENABLED);
 		Prefs.set("mt_trace.use_weighted_averages", USE_WEIGHTED_AVERAGES);
@@ -354,14 +379,13 @@ public class Trace_Microtubules implements PlugIn
 	public static ImagePlus run(ImagePlus imp, double sigma, boolean reduce_noise, boolean suppress_background)
 	{
 		// create new image for output
-		ImagePlus imp_out = IJ.createImage("Microtubule traces of " + imp.getTitle(), imp.getWidth(), imp.getHeight(), imp.getNSlices(), 8);
+		ImagePlus imp_out = IJ.createImage("Microtubule traces of " + imp.getTitle(), imp.getWidth(), imp.getHeight(), imp.getNSlices(), 32);
 		
 		// process slices in image stack
 		ImageStack stack_in = imp.getStack();
 		ImageStack stack_out = imp_out.getStack();
 		for(int slice = 1; slice <= stack_in.getSize(); ++slice)
 		{
-			SLICE_INDEX = slice;
 			ImageProcessor slice_ip = stack_in.getProcessor(slice);
 			ImageProcessor slice_result = run(slice_ip, sigma, reduce_noise, suppress_background);
 			if(slice_result != null)
@@ -375,7 +399,6 @@ public class Trace_Microtubules implements PlugIn
 		}
 		imp_out.setStack(stack_out);
 		imp_out.resetDisplayRange();
-		imp_out.show();
 		
 		// return image
 		return imp_out;
@@ -390,6 +413,7 @@ public class Trace_Microtubules implements PlugIn
 		int image_height = ip.getHeight();
 		
 		// get image statistics
+		// RLSV: use ImageStatistics.getStatistics(ImageProcessor ip, int mOptions, Calibration cal)
 		int original_image_max_intensity = 0;
 		int original_image_min_intensity = 65535; // NOTE: assumes 16-bit images!
 		double original_image_avg_intensity = 0.0;
@@ -570,7 +594,7 @@ public class Trace_Microtubules implements PlugIn
 					second_eigenvector_y = v.get(1,0); // V2y
 				}
 				
-				// RSLV: reorient all eigenvecors in same direction?
+				// reorient all eigenvecors in same direction
 				if(first_eigenvector_y < 0)
 				{
 					first_eigenvector_x = -first_eigenvector_x;
@@ -616,7 +640,7 @@ public class Trace_Microtubules implements PlugIn
 				frangi_measures[px][py][4] = fm;
 				
 				// calculate position of peak in second order Taylor polynomial from Steger's algorithm
-				double t = (dx.getf(px,py)*first_eigenvector_x + dy.getf(px,py)*first_eigenvector_y)/(dxdx.getf(px,py)*first_eigenvector_x*first_eigenvector_x + dxdy.getf(px,py)*dydx.getf(px,py)*first_eigenvector_x*first_eigenvector_y + dydy.getf(px,py)*first_eigenvector_y*first_eigenvector_y);
+				double t = -(dx.getf(px,py)*first_eigenvector_x + dy.getf(px,py)*first_eigenvector_y)/(dxdx.getf(px,py)*first_eigenvector_x*first_eigenvector_x + dxdy.getf(px,py)*dydx.getf(px,py)*first_eigenvector_x*first_eigenvector_y + dydy.getf(px,py)*first_eigenvector_y*first_eigenvector_y);
 				double dlpx = t*first_eigenvector_x;
 				double dlpy = t*first_eigenvector_y;
 				
@@ -824,13 +848,6 @@ public class Trace_Microtubules implements PlugIn
 				standard_error_fit_results[px][py] = standard_errors;
 				chi_squared_fit_results[px][py] = chi_squared;
 				r_squared_fit_results[px][py] = r_squared;
-				
-				// override Taylor peak estimation
-				if(USE_GAUSSIAN_FIT_PEAKS)
-				{
-					results_step_3[px][py][6] = fitted_parameters[2]*nx;
-					results_step_3[px][py][7] = fitted_parameters[2]*ny;
-				}
 			}
 		}
 		Profiling.toc("Step 4: Fitting line profiles");
@@ -1164,23 +1181,25 @@ public class Trace_Microtubules implements PlugIn
 		// Step 5d: filter hit count map
 		
 		ImageProcessor valid_line_points_map_ip = new ByteProcessor(image_width, image_height);
-		for(int py = 0; py < image_height; ++py)
-		{
-			for(int px = 0; px < image_width; ++px)
+//		if(VALID_LINE_POINT_THRESHOLD > 1)
+//		{
+			for(int py = 0; py < image_height; ++py)
 			{
-				// filter pixels with less than VALID_LINE_POINT_THRESHOLD hits
-				if(hit_count_map_ip.get(px, py) >= VALID_LINE_POINT_THRESHOLD)
+				for(int px = 0; px < image_width; ++px)
 				{
-					valid_line_points_map_ip.set(px, py, 255);
+					// filter pixels with less than VALID_LINE_POINT_THRESHOLD hits
+					if(hit_count_map_ip.get(px, py) >= VALID_LINE_POINT_THRESHOLD)
+					{
+						valid_line_points_map_ip.set(px, py, 255);
+					}
+					//else
+					//{
+					//	valid_line_points_mask_ip.set(px, py, 0);
+					//}
 				}
-				//else
-				//{
-				//	valid_line_points_mask_ip.set(px, py, 0);
-				//}
 			}
-		}
+//		}
 		
-/*
 		// skeletonize valid line point map
 		ImageProcessor valid_line_points_skeleton_ip = valid_line_points_map_ip.duplicate();
 		if(SKELETONIZE_VALID_LINE_POINTS_MAP)
@@ -1245,17 +1264,18 @@ public class Trace_Microtubules implements PlugIn
 				}
 			}
 		}
-*/
 		
 		// DEBUG: show intermediate images
 		if(DEBUG_MODE_ENABLED)
 		{
 			// show valid line points map image
-			ImagePlus valid_line_points_map_imp = new ImagePlus("DEBUG: valid line points map", valid_line_points_map_ip);
-			valid_line_points_map_imp.resetDisplayRange();
-			valid_line_points_map_imp.show();
+			if(VALID_LINE_POINT_THRESHOLD > 0)
+			{
+				ImagePlus valid_line_points_map_imp = new ImagePlus("DEBUG: valid line points map", valid_line_points_map_ip);
+				valid_line_points_map_imp.resetDisplayRange();
+				valid_line_points_map_imp.show();
+			}
 			
-/*
 			if(SKELETONIZE_VALID_LINE_POINTS_MAP)
 			{
 				ImagePlus valid_line_points_skeleton_imp = new ImagePlus("DEBUG: valid line points skeleton", valid_line_points_skeleton_ip);
@@ -1276,839 +1296,100 @@ public class Trace_Microtubules implements PlugIn
 				valid_line_points_filtered_imp.resetDisplayRange();
 				valid_line_points_filtered_imp.show();
 			}
-*/
 		}
 		
 		// *********************************************************************
 		
-		// STEP 3a: first sort all seeding points in decending order
-		Vector<Vector<Double> > seeding_points = new Vector<Vector<Double> >();
-		for(int px = 0; px < image_width; ++px)
-		{
-			for(int py = 0; py < image_height; ++py)
-			{
-				// use only valid line points
-				if(valid_line_points_map_ip.get(px, py) == 255)
-				{
-					// create point vector
-					Vector<Double> p = new Vector<Double>(3);
-					p.add(new Double(px));
-					p.add(new Double(py));
-					p.add(new Double((double)(hit_count_map_ip.get(px, py)) / (double)(hit_count_max))); // hit count
-					//p.add(new Double(0.0)); // RSLV: avg mu?
-					p.add(new Double(avg_r_squared_fit_results[px][py])); // avg R^2
-					seeding_points.add(p);
-				}
-			}
-		}
-		System.err.println("Number of seeding points = " + seeding_points.size());
-		Collections.sort(seeding_points, new Comparator<Vector<Double> >() {
-			public int compare(Vector<Double> o1, Vector<Double> o2)
-			{
-				Double cost_o1 = new Double(WEIGHT_HIT_COUNT * o1.get(2) + WEIGHT_R_SQUARED * o1.get(3));
-				Double cost_o2 = new Double(WEIGHT_HIT_COUNT * o2.get(2) + WEIGHT_R_SQUARED * o2.get(3));
-				return cost_o2.compareTo(cost_o1); // descending order
-			}
-		});
 		
-		// trace lines, starting from highest seeding point
-		Line[][] point_to_line_map = new Line[image_width][image_height];
-		ImageProcessor processing_map_ip = new ByteProcessor(image_width, image_height);
-		int AVAILABLE = 0x00;
-		int LIMITED = 0x04;
-		int LINEPOINT = 0x02;
-		int JUNCTION = 0x08;
+		// Next steps: trace individual lines
+		// Straight forward solution: just trace all 8-connected lines
 		Vector<Line> lines = new Vector<Line>();
-		for(Vector<Double> seeding_point : seeding_points)
+		ImageProcessor processing_map_ip = valid_line_points_filtered_ip.duplicate();
+		for(int py = 0; py < image_height; ++py)
 		{
-			// get current pixel information
-			int cp_px = seeding_point.get(0).intValue();
-			int cp_py = seeding_point.get(1).intValue();
-			double cp_dlpx = results_step_3[cp_px][cp_py][6];
-			double cp_dlpy = results_step_3[cp_px][cp_py][7];
-			
-			// get orientation of point
-			double cp_nx = results_step_3[cp_px][cp_py][1];
-			double cp_ny = results_step_3[cp_px][cp_py][2];
-			double cp_na = getAngle(cp_nx, cp_ny);
-			int cp_ni = getOrientationIndex(cp_na);
-			double cp_sx = results_step_3[cp_px][cp_py][4];
-			double cp_sy = results_step_3[cp_px][cp_py][5];
-			double cp_sa = getAngle(cp_sx, cp_sy);
-			int cp_si = getOrientationIndex(cp_sa);
-			
-			// check if not already processed
-			if(processing_map_ip.get(cp_px, cp_py) == AVAILABLE)
+			for(int px = 0; px < image_width; ++px)
 			{
-				// start local processing map for line
-				ImageProcessor local_processing_map_ip = new ByteProcessor(image_width, image_height);
-				
-				// add point to line
-				Line line = new Line();
-				line.add(new Point(cp_px, cp_py, cp_dlpx, cp_dlpy));
-				point_to_line_map[cp_px][cp_py] = line;
-				processing_map_ip.set(cp_px, cp_py, LINEPOINT);
-				local_processing_map_ip.set(cp_px, cp_py, 255);
-				lines.add(line); // @#$%@#%@#%
-				
-				// trace in both directions
-				double[] trace_directions = new double[]{0, 180};
-				for(int tdi = 0; tdi < trace_directions.length; ++tdi)
+				// check if line point
+				if(processing_map_ip.get(px, py) == 255)
 				{
-					double trace_direction = trace_directions[tdi];
-					System.err.println("Trace in direction " + trace_direction);
+					// check if point is an end point (only one neighbour)
+					int neighbourhood_sum = 0;
+					for(int ky = -1; ky <= 1; ++ky)
+					{
+						for(int kx = -1; kx <= 1; ++kx)
+						{
+							neighbourhood_sum += processing_map_ip.get(px+kx, py+ky);
+						}
+					}
+					if(neighbourhood_sum != 2*255)
+					{
+						continue; // not an end point of a line
+					}
 					
-					// trace line in first direction
-					int tp_px = cp_px;
-					int tp_py = cp_py;
+					// start new line
+					Line l = new Line();
+					lines.add(l);
 					
-					double tp_sao = (cp_sa+trace_direction)%360.0;
+					// add current pixel to line and clear from processing map
+					l.add(new Point(px, py, fitting_results[px][py][2]*results_step_3[px][py][1], fitting_results[px][py][2]*results_step_3[px][py][2]));
+					processing_map_ip.set(px, py, 0);
 					
+					// start tracing one end
+					// RSLV: if tracing from end points; only on direction needs to be traced
+					int tx = px;
+					int ty = py;
 					boolean tracing = true;
 					while(tracing)
 					{
-						// get information on current trace point
-						double tp_dlpx = results_step_3[tp_px][tp_py][6];
-						double tp_dlpy = results_step_3[tp_px][tp_py][7];
-						
-						// get orientation of point
-						double tp_nx = results_step_3[tp_px][tp_py][1];
-						double tp_ny = results_step_3[tp_px][tp_py][2];
-						double tp_na = getAngle(tp_nx, tp_ny);
-						int tp_ni = getOrientationIndex(tp_na);
-						double tp_sx = results_step_3[tp_px][tp_py][4];
-						double tp_sy = results_step_3[tp_px][tp_py][5];
-						double tp_sa = getAngle(tp_sx, tp_sy);
-						int tp_si = getOrientationIndex(tp_sa);
-						
-						// reorient vector information in global tracing direction
-						System.err.println("angle="+tp_sa);
-						System.err.println("index="+tp_si);
-						if(Math.abs(tp_sa - tp_sao) > 90.0)
+						tracing = false;
+						for(int ky = -1; ky <= 1 && !tracing; ++ky)
 						{
-							System.err.println("Reorienting s(t) vector");
-							tp_sx = -tp_sx;
-							tp_sy = -tp_sy;
-							tp_sa = getAngle(tp_sx, tp_sy);
-							tp_si = getOrientationIndex(tp_sa);
-							System.err.println("corrected angle="+tp_sa);
-							System.err.println("corrected index="+tp_si);
-						}
-						
-						// determine next best neighbour
-						int np_px = -1;
-						int np_py = -1;
-						double last_cost = Double.MAX_VALUE;
-						
-						System.err.println("tp_px="+tp_px + "    tp_py="+tp_py);
-						
-						// check all three neighbours
-						for(int i = -1; i <= 1; ++i)
-						{
-							// calculate new orientation index within range [0..7]
-							int tp_sic = tp_si + i;
-							if(tp_sic < 0) tp_sic = 8 + tp_sic;
-							if(tp_sic > 7) tp_sic = tp_sic % 8;
-							
-							// determine next neighbour position
-							int[] dp = getNextPixel(tp_sic);
-							//int[] dp = getNextPixel((tp_ni + i) % 8);
-							System.err.println("  dp[0]=" + dp[0] + "    dp[1]=" + dp[1]);
-							int dp_px = tp_px + dp[0];
-							int dp_py = tp_py + dp[1];
-							System.err.println("  dp_px=" + dp_px + "    dp_py=" + dp_py);
-							
-							// skip if outside of image window
-							if(dp_px < 0 || dp_px >= image_width || dp_py < 0 || dp_py >= image_height)
+							for(int kx = -1; kx <= 1 && !tracing; ++kx)
 							{
-								System.err.println("  Next point lies outside image window");
-								continue;
-							}
-							
-							// skip if not in hit count map
-							if(hit_count_map_ip.get(dp_px, dp_py) == 0)
-							{
-								System.err.println("  Next point does not have a registered hit");
-								continue;
-							}
-							
-							// get next neighbour information
-							double dp_dlpx = results_step_3[dp_px][dp_py][6];
-							double dp_dlpy = results_step_3[dp_px][dp_py][7];
-							
-							// get orientation of point
-							double dp_nx = results_step_3[dp_px][dp_py][1];
-							double dp_ny = results_step_3[dp_px][dp_py][2];
-							double dp_na = getAngle(dp_nx, dp_ny); //Math.atan2(dp_ny, dp_nx);
-							int dp_ni = getOrientationIndex(dp_na);
-							double dp_sx = results_step_3[dp_px][dp_py][4];
-							double dp_sy = results_step_3[dp_px][dp_py][5];
-							double dp_sa = getAngle(dp_sx, dp_sy); //Math.atan2(dp_sy, dp_sx);
-							int dp_si = getOrientationIndex(dp_sa);
-							
-							// calclate cost function
-							double ddist_x = (dp_px + 0.5 + dp_dlpx) - (tp_px + 0.5 + tp_dlpx);
-							double ddist_y = (dp_py + 0.5 + dp_dlpy) - (tp_py + 0.5 + tp_dlpy);
-							double ddist = Math.sqrt(ddist_x * ddist_x + ddist_y * ddist_y);
-							double dtheta = Math.abs(dp_sa - tp_sa); // NOTE: use s(t), not n(t), although should not matter
-							System.err.println("dtheta="+dtheta);
-							if(dtheta > 180.0) // NOTE: bigger than, not equal!
-							{
-								dtheta = 360.0 - dtheta;
-								System.err.println("corrected dtheta="+dtheta);
-							}
-							if(dtheta > 90.0) // NOTE: bigger than, not equal!
-							{
-								dtheta = 180.0 - dtheta;
-								System.err.println("corrected dtheta="+dtheta);
-							}
-							dtheta = Math.toRadians(dtheta);
-							
-							double hit_count = (double)(hit_count_map_ip.get(dp_px, dp_py)) / (double)(hit_count_max);
-							//double peak_offset = 0.0; // RLSV: use avg mu?
-							double r_squared = avg_r_squared_fit_results[dp_px][dp_py];
-							double cost = WEIGHT_DISTANCE * ddist + WEIGHT_ORIENTATION * dtheta + WEIGHT_R_SQUARED * (1.0 - r_squared) + WEIGHT_HIT_COUNT * hit_count;
-							
-							System.err.println("  cost=w1*distance+w2*theta+w3*r_squared+w4*hit_count" + WEIGHT_DISTANCE + "*" + ddist + "+" + WEIGHT_ORIENTATION + "*" + dtheta + "+" + WEIGHT_R_SQUARED + "*" + r_squared + "+" + WEIGHT_HIT_COUNT + "*" + hit_count + "=" + cost);
-							System.err.println("  last_cost="+last_cost);
-							
-							// check if current neighour is better than previous
-							if(cost < last_cost)
-							{
-								System.err.println("    Point is better than previous point");
-								// update best neighbour
-								last_cost = cost;
-								np_px = dp_px;
-								np_py = dp_py;
-							}
-						}
-						
-						// *****************************************************
-						
-						// skip if no best match found (outside of image window or no valid line point)
-						if(np_px == -1 || np_py == -1)
-						{
-							System.err.println("Did not find any suitable neighbour");
-							tracing = false;
-							continue; //break;
-						}
-						
-						System.err.println("Best neighbour at ("+np_px+","+np_py+")");
-						
-						// get next neighbour information
-						double np_dlpx = results_step_3[np_px][np_py][6];
-						double np_dlpy = results_step_3[np_px][np_py][7];
-						
-						// get orientation of point
-						double np_nx = results_step_3[np_px][np_py][1];
-						double np_ny = results_step_3[np_px][np_py][2];
-						double np_na = getAngle(np_nx, np_ny); //Math.atan2(cp_ny, cp_nx);
-						int np_ni = getOrientationIndex(np_na);
-						double np_sx = results_step_3[np_px][np_py][4];
-						double np_sy = results_step_3[np_px][np_py][5];
-						double np_sa = getAngle(np_sx, np_sy); //Math.atan2(cp_sy, cp_sx);
-						int np_si = getOrientationIndex(np_sa);
-						
-						// reorient vector information in global tracing direction
-						if(Math.abs(np_sa - tp_sao) > 90.0 && Math.abs(np_sa - tp_sao) < 270.0)
-						{
-							System.err.println("Reorienting s(t) vector");
-							np_sx = -np_sx;
-							np_sy = -np_sy;
-							np_sa = getAngle(np_sx, np_sy);
-							np_si = getOrientationIndex(np_sa);
-						}
-						
-						// determine action
-						System.err.println("Determine best action");
-						if(processing_map_ip.get(np_px, np_py) == AVAILABLE || processing_map_ip.get(np_px, np_py) == LIMITED) // i.e. not a linepoint nor a junction
-						{
-							System.err.println("  Point is available");
-							System.err.println("    status = " + processing_map_ip.get(np_px, np_py));
-							
-							// add point to line
-							if(trace_direction == 0)
-							{
-								line.addFirst(new Point(np_px, np_py, np_dlpx, np_dlpy));
-							}
-							else
-							{
-								line.addLast(new Point(np_px, np_py, np_dlpx, np_dlpy));
-							}
-							point_to_line_map[np_px][np_py] = line;
-							processing_map_ip.set(np_px, np_py, LINEPOINT);
-							local_processing_map_ip.set(np_px, np_py, 255);
-						}
-						else if(processing_map_ip.get(np_px, np_py) == LINEPOINT)
-						{
-							System.err.println("  Point is part of line, mark as junction, and stop tracing");
-							
-							// find current point on line
-							Point jp = new Point(np_px, np_py, np_dlpx, np_dlpy);
-							System.err.println("jp = " + jp);
-							Line line_a = point_to_line_map[np_px][np_py];
-							System.err.println("line_a = " + line_a);
-							System.err.println("line_a.size() = " + line_a.size());
-							int jp_pos = line_a.indexOf(jp);
-							System.err.println("jp_pos = " + jp_pos);
-							
-							// check if not the same line
-							if(line_a != line)
-							{
-								// split the line
-								System.err.println("splicing line a");
-								System.err.println("line_a = " + line_a);
-								System.err.println("line_a.size() = " + line_a.size());
-								System.err.println("point jp = " + jp);
-								System.err.println("position = " + jp_pos);
-								
-								Line line_b = line_a.splice(jp_pos);
-								System.err.println("line_a = " + line_a);
-								System.err.println("line_a.size() = " + line_a.size());
-								
-								System.err.println("line_b = " + line_b);
-								System.err.println("line_b.size() = " + line_b.size());
-								
-								// RSLV: add junction point to line?
-								line_a.addLast(new Point(np_px, np_py, np_dlpx, np_dlpy));
-								
-								lines.add(line_b);
-								
-								// link points to second line
-								for(Point pb : line_b)
+								if(processing_map_ip.getPixel(tx+kx, ty+ky) == 255)
 								{
-									point_to_line_map[pb.px][pb.py] = line_b;
-								}
-								
-								// mark point as junction
-								processing_map_ip.set(np_px, np_py, JUNCTION);
-								local_processing_map_ip.set(np_px, np_py, 255);
-								point_to_line_map[np_px][np_py] = null;
-							}
-							
-							// stop tracing
-							tracing = false;
-						}
-						else if(processing_map_ip.get(np_px, np_py) == JUNCTION)
-						{
-							System.err.println("  Point is junction, stop tracing");
-							
-							// RLSV: include junction point in new line?
-							if(trace_direction == 0)
-							{
-								line.addFirst(new Point(np_px, np_py, np_dlpx, np_dlpy));
-							}
-							else
-							{
-								line.addLast(new Point(np_px, np_py, np_dlpx, np_dlpy));
-							}
-							//point_to_line_map[np_px][np_py] = line;
-							//processing_map_ip.set(np_px, np_py, LINEPOINT);
-							//local_processing_map_ip.set(np_px, np_py, 255);
-							
-							// stop tracing
-							tracing = false;
-						}
-						
-						// continue tracing from neighbour
-						tp_px = np_px;
-						tp_py = np_py;
-						tp_sao = np_sa;
-					}
-					
-					System.err.println("Done tracing in direction " + trace_direction);
-				}
-				
-				// mark surrounding of line as processed
-				local_processing_map_ip.erode();
-				local_processing_map_ip.erode();
-				
-				for(int lpy = 0; lpy < image_height; ++lpy)
-				{
-					for(int lpx = 0; lpx < image_width; ++lpx)
-					{
-						if(local_processing_map_ip.get(lpx, lpy) == 255 && processing_map_ip.get(lpx, lpy) == 0)
-						{
-							processing_map_ip.set(lpx, lpy, LIMITED);
-						}
-					}
-				}
-			}
-		}
-		
-		// ---------------------------------------------------------------------
-		
-		if(DEBUG_MODE_ENABLED)
-		{
-			ImagePlus processing_map_imp = new ImagePlus("Processing map", processing_map_ip);
-			processing_map_imp.setDisplayRange(0,8); // NOTE: keep up to date with number of processing types
-			processing_map_imp.show();
-		}
-		
-		// *********************************************************************
-		
-		// connect lines segments into larger lines
-//		if(ENABLE_LINKING)
-//		{
-//			if(DEBUG_MODE_ENABLED)
-//			{
-				// find all initial line end points
-				double MAX_BENDING_ANGLE = 2*22.5; // bending angle is actually FOV
-				double SEARCH_DISTANCE = 2*Math.ceil(6*SIGMA); // pixels
-				int BACKTRACK_DISTANCE = 3; // number of point to backtrack
-				int AVERAGING_DISTANCE = 10;
-				ImageProcessor search_window_overlay_ip = ip.duplicate();
-				Overlay search_window_overlay = new Overlay(); // TMP: DEBUG
-				
-				// for each line
-				for(int i = 0; i < lines.size(); ++i)
-				{
-					// get line
-					Line l = lines.get(i);
-					
-					// skip if less than some size
-					if(l.size() < 2+AVERAGING_DISTANCE+2*BACKTRACK_DISTANCE) continue;
-					
-					// for both end points
-					int wx1 = l.get(0+BACKTRACK_DISTANCE).px;
-					int wy1 = l.get(0+BACKTRACK_DISTANCE).py;
-					double wsx1 = l.get(0+BACKTRACK_DISTANCE).sx;
-					double wsy1 = l.get(0+BACKTRACK_DISTANCE).sy;
-					int wdx1 = l.get(0+BACKTRACK_DISTANCE).px - l.get(1+BACKTRACK_DISTANCE).px;
-					int wdy1 = l.get(0+BACKTRACK_DISTANCE).py - l.get(1+BACKTRACK_DISTANCE).py;
-					double wdsx1 = (l.get(0+BACKTRACK_DISTANCE).px + l.get(0+BACKTRACK_DISTANCE).sx) - (l.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).px + l.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sx);
-					double wdsy1 = (l.get(0+BACKTRACK_DISTANCE).py + l.get(0+BACKTRACK_DISTANCE).sy) - (l.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).py + l.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sy);
-					double wsa1 = Math.atan2(wdsy1, wdsx1);
-					double lp1 = 0.0; // TODO: calculate persistence length
-					
-					int wx2 = l.get(l.size()-BACKTRACK_DISTANCE-1).px;
-					int wy2 = l.get(l.size()-BACKTRACK_DISTANCE-1).py;
-					double wsx2 = l.get(l.size()-BACKTRACK_DISTANCE-1).sx;
-					double wsy2 = l.get(l.size()-BACKTRACK_DISTANCE-1).sy;
-					int wdx2 = l.get(l.size()-BACKTRACK_DISTANCE-1).px - l.get(l.size()-BACKTRACK_DISTANCE-2).px;
-					int wdy2 = l.get(l.size()-BACKTRACK_DISTANCE-1).py - l.get(l.size()-BACKTRACK_DISTANCE-2).py;
-					double wdsx2 = (l.get(l.size()-BACKTRACK_DISTANCE-1).px + l.get(l.size()-BACKTRACK_DISTANCE-1).sx) - (l.get(l.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).px + l.get(l.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sx);
-					double wdsy2 = (l.get(l.size()-BACKTRACK_DISTANCE-1).py + l.get(l.size()-BACKTRACK_DISTANCE-1).sy) - (l.get(l.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).py + l.get(l.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sy);
-					double wsa2 = Math.atan2(wdsy2, wdsx2);
-					double lp2 = 0.0; // TODO: calculate persistence length
-					
-					// define search window
-					double wtlx1 = wx1 + Math.cos(wsa1-Math.PI/2)*0.5*1.0 + 0.5 + wsx1; // NOTE: half pex offset
-					double wtly1 = wy1 + Math.sin(wsa1-Math.PI/2)*0.5*1.0 + 0.5 + wsy1; // NOTE: half pex offset
-					double wtrx1 = wx1 + Math.cos(wsa1+Math.PI/2)*0.5*1.0 + 0.5 + wsx1; // NOTE: half pex offset
-					double wtry1 = wy1 + Math.sin(wsa1+Math.PI/2)*0.5*1.0 + 0.5 + wsy1; // NOTE: half pex offset
-					
-					double wtlx2 = wx2 + Math.cos(wsa2-Math.PI/2)*0.5*1.0 + 0.5 + wsx2; // NOTE: half pex offset
-					double wtly2 = wy2 + Math.sin(wsa2-Math.PI/2)*0.5*1.0 + 0.5 + wsy2; // NOTE: half pex offset
-					double wtrx2 = wx2 + Math.cos(wsa2+Math.PI/2)*0.5*1.0 + 0.5 + wsx2; // NOTE: half pex offset
-					double wtry2 = wy2 + Math.sin(wsa2+Math.PI/2)*0.5*1.0 + 0.5 + wsy2; // NOTE: half pex offset
-					
-					// DEBUG: draw search windows in overlay
-					double persistence_length = Math.toRadians(MAX_BENDING_ANGLE);
-					
-					Roi w1 = new PolygonRoi(new float[]{(float)wtlx1, (float)(wtlx1+Math.cos(wsa1-(0.5*persistence_length))*SEARCH_DISTANCE), (float)(wtrx1+Math.cos(wsa1+(0.5*persistence_length))*SEARCH_DISTANCE), (float)wtrx1}, new float[]{(float)wtly1, (float)(wtly1+Math.sin(wsa1-(0.5*persistence_length))*SEARCH_DISTANCE), (float)(wtry1+Math.sin(wsa1+(0.5*persistence_length))*SEARCH_DISTANCE), (float)wtry1}, PolygonRoi.POLYGON);
-					w1.setStrokeWidth(0.0);
-					w1.setStrokeColor(Color.YELLOW);
-					w1.setPosition(1);
-					search_window_overlay.add(w1);
-					Roi w1c = new OvalRoi(wx1+0.5+wsx1-0.125, wy1+0.5+wsy1-0.125, 0.250, 0.250);
-					w1c.setStrokeWidth(0.0);
-					w1c.setStrokeColor(Color.YELLOW);
-					w1c.setPosition(1);
-					search_window_overlay.add(w1c);
-					float[] w1_line_xs = new float[BACKTRACK_DISTANCE+AVERAGING_DISTANCE];
-					float[] w1_line_ys = new float[BACKTRACK_DISTANCE+AVERAGING_DISTANCE];
-					for(int j = 0; j < BACKTRACK_DISTANCE+AVERAGING_DISTANCE; ++j)
-					{
-						w1_line_xs[j] = (float)(l.get(j).px + 0.5 + l.get(j).sx);
-						w1_line_ys[j] = (float)(l.get(j).py + 0.5 + l.get(j).sy);
-					}
-					Roi w1l = new PolygonRoi(w1_line_xs, w1_line_ys, PolygonRoi.POLYLINE);
-					w1l.setStrokeWidth(0.0);
-					w1l.setStrokeColor(Color.YELLOW);
-					w1l.setPosition(1);
-					search_window_overlay.add(w1l);
-					
-					Roi w2 = new PolygonRoi(new float[]{(float)wtlx2, (float)(wtlx2+Math.cos(wsa2-(0.5*persistence_length))*SEARCH_DISTANCE), (float)(wtrx2+Math.cos(wsa2+(0.5*persistence_length))*SEARCH_DISTANCE), (float)wtrx2}, new float[]{(float)wtly2, (float)(wtly2+Math.sin(wsa2-(0.5*persistence_length))*SEARCH_DISTANCE), (float)(wtry2+Math.sin(wsa2+(0.5*persistence_length))*SEARCH_DISTANCE), (float)wtry2}, PolygonRoi.POLYGON);
-					w2.setStrokeWidth(0.0);
-					w2.setStrokeColor(Color.ORANGE);
-					w2.setPosition(1);
-					search_window_overlay.add(w2);
-					Roi w2c = new OvalRoi(wx2+0.5+wsx2-0.125, wy2+0.5+wsy2-0.125, 0.250, 0.250);    
-					w2c.setStrokeWidth(0.0);
-					w2c.setStrokeColor(Color.ORANGE);
-					w2c.setPosition(1);
-					search_window_overlay.add(w2c);
-					float[] w2_line_xs = new float[BACKTRACK_DISTANCE+AVERAGING_DISTANCE];
-					float[] w2_line_ys = new float[BACKTRACK_DISTANCE+AVERAGING_DISTANCE];
-					for(int j = 0; j < BACKTRACK_DISTANCE+AVERAGING_DISTANCE; ++j)
-					{
-						w2_line_xs[j] = (float)(l.get(l.size()-j-1).px + 0.5 + l.get(l.size()-j-1).sx);
-						w2_line_ys[j] = (float)(l.get(l.size()-j-1).py + 0.5 +  l.get(l.size()-j-1).sy);
-					}
-					Roi w2l = new PolygonRoi(w2_line_xs, w2_line_ys, PolygonRoi.POLYLINE);
-					w2l.setStrokeWidth(0.0);
-					w2l.setStrokeColor(Color.ORANGE);
-					w2l.setPosition(1);
-					search_window_overlay.add(w2l);
-				}
-				
-				ImagePlus search_window_overlay_imp = new ImagePlus("Search windows", search_window_overlay_ip);
-				search_window_overlay_imp.setOverlay(search_window_overlay); // TMP: DEBUG
-				//search_window_overlay_imp.updateAndRepaintWindow();
-////			search_window_overlay_imp.show();
-//			}
-			
-			// -----------------------------------------------------------------
-			
-			// start linking
-			boolean changed = true;
-			while(changed)
-			{
-				changed = false;
-				
-//				double SEARCH_DISTANCE = 2*Math.ceil(6*SIGMA); // pixels
-//				int BACKTRACK_DISTANCE = 3; // number of point to backtrack
-//				int AVERAGING_DISTANCE = 10;
-				HashMap<Tuple<Line, Integer>, HashSet<Tuple<Line, Integer> > > candidate_matches = new HashMap<Tuple<Line, Integer>, HashSet<Tuple<Line, Integer> > >();
-				
-				// for each line
-				for(int i = 0; i < lines.size(); ++i)
-				{
-					// get line
-					Line l = lines.get(i);
-					
-					// skip if less than some size
-					if(l.size() < 2+AVERAGING_DISTANCE+2*BACKTRACK_DISTANCE) continue;
-					
-					// for both end points
-					int wx1 = l.get(0+BACKTRACK_DISTANCE).px;
-					int wy1 = l.get(0+BACKTRACK_DISTANCE).py;
-					double wsx1 = l.get(0+BACKTRACK_DISTANCE).sx;
-					double wsy1 = l.get(0+BACKTRACK_DISTANCE).sy;
-					int wdx1 = l.get(0+BACKTRACK_DISTANCE).px - l.get(1+BACKTRACK_DISTANCE).px;
-					int wdy1 = l.get(0+BACKTRACK_DISTANCE).py - l.get(1+BACKTRACK_DISTANCE).py;
-					double wdsx1 = (l.get(0+BACKTRACK_DISTANCE).px + l.get(0+BACKTRACK_DISTANCE).sx) - (l.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).px + l.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sx);
-					double wdsy1 = (l.get(0+BACKTRACK_DISTANCE).py + l.get(0+BACKTRACK_DISTANCE).sy) - (l.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).py + l.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sy);
-					double wsa1 = Math.atan2(wdsy1, wdsx1);
-					double lp1 = 0.0; // TODO: calculate persistence length
-					
-					int wx2 = l.get(l.size()-BACKTRACK_DISTANCE-1).px;
-					int wy2 = l.get(l.size()-BACKTRACK_DISTANCE-1).py;
-					double wsx2 = l.get(l.size()-BACKTRACK_DISTANCE-1).sx;
-					double wsy2 = l.get(l.size()-BACKTRACK_DISTANCE-1).sy;
-					int wdx2 = l.get(l.size()-BACKTRACK_DISTANCE-1).px - l.get(l.size()-BACKTRACK_DISTANCE-2).px;
-					int wdy2 = l.get(l.size()-BACKTRACK_DISTANCE-1).py - l.get(l.size()-BACKTRACK_DISTANCE-2).py;
-					double wdsx2 = (l.get(l.size()-BACKTRACK_DISTANCE-1).px + l.get(l.size()-BACKTRACK_DISTANCE-1).sx) - (l.get(l.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).px + l.get(l.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sx);
-					double wdsy2 = (l.get(l.size()-BACKTRACK_DISTANCE-1).py + l.get(l.size()-BACKTRACK_DISTANCE-1).sy) - (l.get(l.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).py + l.get(l.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sy);
-					double wsa2 = Math.atan2(wdsy2, wdsx2);
-					double lp2 = 0.0; // TODO: calculate persistence length
-					
-					// define search window
-					double wtlx1 = wx1 + Math.cos(wsa1-Math.PI/2)*0.5*1.0 + 0.5 + wsx1; // NOTE: half pex offset
-					double wtly1 = wy1 + Math.sin(wsa1-Math.PI/2)*0.5*1.0 + 0.5 + wsy1; // NOTE: half pex offset
-					double wtrx1 = wx1 + Math.cos(wsa1+Math.PI/2)*0.5*1.0 + 0.5 + wsx1; // NOTE: half pex offset
-					double wtry1 = wy1 + Math.sin(wsa1+Math.PI/2)*0.5*1.0 + 0.5 + wsy1; // NOTE: half pex offset
-					
-					double wtlx2 = wx2 + Math.cos(wsa2-Math.PI/2)*0.5*1.0 + 0.5 + wsx2; // NOTE: half pex offset
-					double wtly2 = wy2 + Math.sin(wsa2-Math.PI/2)*0.5*1.0 + 0.5 + wsy2; // NOTE: half pex offset
-					double wtrx2 = wx2 + Math.cos(wsa2+Math.PI/2)*0.5*1.0 + 0.5 + wsx2; // NOTE: half pex offset
-					double wtry2 = wy2 + Math.sin(wsa2+Math.PI/2)*0.5*1.0 + 0.5 + wsy2; // NOTE: half pex offset
-					
-					// DEBUG: draw search windows in overlay
-					double persistence_length = Math.toRadians(MAX_BENDING_ANGLE);
-					
-					Roi w1 = new PolygonRoi(new float[]{(float)wtlx1, (float)(wtlx1+Math.cos(wsa1-(0.5*persistence_length))*SEARCH_DISTANCE), (float)(wtrx1+Math.cos(wsa1+(0.5*persistence_length))*SEARCH_DISTANCE), (float)wtrx1}, new float[]{(float)wtly1, (float)(wtly1+Math.sin(wsa1-(0.5*persistence_length))*SEARCH_DISTANCE), (float)(wtry1+Math.sin(wsa1+(0.5*persistence_length))*SEARCH_DISTANCE), (float)wtry1}, PolygonRoi.POLYGON);
-					
-					Roi w2 = new PolygonRoi(new float[]{(float)wtlx2, (float)(wtlx2+Math.cos(wsa2-(0.5*persistence_length))*SEARCH_DISTANCE), (float)(wtrx2+Math.cos(wsa2+(0.5*persistence_length))*SEARCH_DISTANCE), (float)wtrx2}, new float[]{(float)wtly2, (float)(wtly2+Math.sin(wsa2-(0.5*persistence_length))*SEARCH_DISTANCE), (float)(wtry2+Math.sin(wsa2+(0.5*persistence_length))*SEARCH_DISTANCE), (float)wtry2}, PolygonRoi.POLYGON);
-					
-					// find all possible matches
-					for(int j = 0; j < lines.size(); ++j)
-					{
-						// skip self
-						if(j == i) continue;
-						
-						// get other line
-						Line ol = lines.get(j);
-						
-						// again, skip if less than some size
-						if(ol.size() < 2+AVERAGING_DISTANCE+2*BACKTRACK_DISTANCE) continue;
-						
-						// get coordinates of points
-						int olx1 = ol.get(0+BACKTRACK_DISTANCE).px;
-						int oly1 = ol.get(0+BACKTRACK_DISTANCE).py;
-						int olx2 = ol.get(ol.size()-BACKTRACK_DISTANCE-1).px;
-						int oly2 = ol.get(ol.size()-BACKTRACK_DISTANCE-1).py;
-						
-						// find a match
-						int source_window = -1;
-						int destination_window = -1;
-						if(w1.contains(olx1, oly1))
-						{
-							System.err.println("found possible match between W1 (" + wx1 + "," + wy1 + ") and OL1 (" + olx1 + "," + oly1 + ")");
-							source_window = 1;
-							destination_window = 1;
-						}
-						if(w1.contains(olx2, oly2))
-						{
-							System.err.println("found possible match between W1 (" + wx1 + "," + wy1 + ") and OL2 (" + olx2 + "," + oly2 + ")");
-							source_window = 1;
-							destination_window = 2;
-						}
-						if(w2.contains(olx1, oly1))
-						{
-							System.err.println("found possible match between W2 (" + wx2 + "," + wy2 + ") and OL1 (" + olx1 + "," + oly1 + ")");
-							source_window = 2;
-							destination_window = 1;
-						}
-						if(w2.contains(olx2, oly2))
-						{
-							System.err.println("found possible match between W2 (" + wx2 + "," + wy2 + ") and OL2 (" + olx2 + "," + oly2 + ")");
-							source_window = 2;
-							destination_window = 2;
-						}
-						
-						// add to candidate matches if match was found
-						if(source_window != -1 && destination_window != -1)
-						{
-							Tuple<Line, Integer> source = new Tuple<Line, Integer>(l, source_window);
-							Tuple<Line, Integer> destination = new Tuple<Line, Integer>(ol, destination_window);
-							
-							// first direction
-							if(candidate_matches.containsKey(source))
-							{
-								// add to existing set
-								HashSet<Tuple<Line, Integer> > source_set = candidate_matches.get(source);
-								source_set.add(destination);
-								candidate_matches.put(source, source_set);
-							}
-							else
-							{
-								// create new entry
-								HashSet<Tuple<Line, Integer> > source_set = new HashSet<Tuple<Line, Integer> >();
-								source_set.add(destination);
-								candidate_matches.put(source, source_set);
-							}
-							
-							// bi-directional
-							if(candidate_matches.containsKey(destination))
-							{
-								// add to existing set
-								HashSet<Tuple<Line, Integer> > destination_set = candidate_matches.get(destination);
-								destination_set.add(source);
-								candidate_matches.put(destination, destination_set);
-							}
-							else
-							{
-								// create new entry
-								HashSet<Tuple<Line, Integer> > destination_set = new HashSet<Tuple<Line, Integer> >();
-								destination_set.add(source);
-								candidate_matches.put(destination, destination_set);
-							}
-						}
-					}
-				}
-				
-				// -------------------------------------------------------------
-				
-				// straight forward linking of matches
-				for(Map.Entry<Tuple<Line, Integer>, HashSet<Tuple<Line, Integer> > > entry : candidate_matches.entrySet())
-				{
-					// get source
-					Tuple<Line, Integer> source = entry.getKey();
-					
-//					// skip if already matched
-//					if(matched.contains(source))
-//					{
-//						continue;
-//					}
-					
-					// get details on source
-					Line source_line = source.first;
-					Integer source_window = source.second;
-					int source_wx = -1, source_wy = -1;
-					double source_wsx = -1, source_wsy = -1;
-					int source_wdx = -1, source_wdy = -1;
-					double source_wdsx = -1, source_wdsy = -1;
-					double source_wsa = -1;
-					if(source_window % 2 == 1) // front
-					{
-						source_wx = source_line.get(0+BACKTRACK_DISTANCE).px;
-						source_wy = source_line.get(0+BACKTRACK_DISTANCE).py;
-						source_wsx = source_line.get(0+BACKTRACK_DISTANCE).sx;
-						source_wsy = source_line.get(0+BACKTRACK_DISTANCE).sy;
-						source_wdx = source_line.get(0+BACKTRACK_DISTANCE).px - source_line.get(1+BACKTRACK_DISTANCE).px;
-						source_wdy = source_line.get(0+BACKTRACK_DISTANCE).py - source_line.get(1+BACKTRACK_DISTANCE).py;
-						source_wdsx = (source_line.get(0+BACKTRACK_DISTANCE).px + source_line.get(0+BACKTRACK_DISTANCE).sx) - (source_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).px + source_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sx);
-						source_wdsy = (source_line.get(0+BACKTRACK_DISTANCE).py + source_line.get(0+BACKTRACK_DISTANCE).sy) - (source_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).py + source_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sy);
-						source_wsa = Math.atan2(source_wdsy, source_wdsx);
-					}
-					else if(source_window % 2 == 0) // back
-					{
-						source_wx = source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).px;
-						source_wy = source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).py;
-						source_wsx = source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).sx;
-						source_wsy = source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).sy;
-						source_wdx = source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).px - source_line.get(source_line.size()-BACKTRACK_DISTANCE-2).px;
-						source_wdy = source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).py - source_line.get(source_line.size()-BACKTRACK_DISTANCE-2).py;
-						source_wdsx = (source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).px + source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).sx) - (source_line.get(source_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).px + source_line.get(source_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sx);
-						source_wdsy = (source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).py + source_line.get(source_line.size()-BACKTRACK_DISTANCE-1).sy) - (source_line.get(source_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).py + source_line.get(source_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sy);
-						source_wsa = Math.atan2(source_wdsy, source_wdsx);
-					}
-					
-					// get set of destinations
-					HashSet<Tuple<Line, Integer> > destinations = entry.getValue();
-					
-					// skip if more than one match
-	//				if(destinations.size() > 1)
-	//				{
-	//					continue;
-	//				}
-					
-					// find best match
-					Tuple<Line, Integer> best_matching_destination = null;
-					Line best_matching_line = null;
-					int best_matching_window = -1;
-					double best_matching_cost = Double.MAX_VALUE;
-					for(Tuple<Line, Integer> destination : destinations)
-					{
-//						// skip if already matched
-//						if(matched.contains(destination))
-//						{
-//							continue;
-//						}
-						
-						// get details on source
-						Line destination_line = destination.first;
-						Integer destination_window = destination.second;
-						int destination_wx = -1, destination_wy = -1;
-						double destination_wsx = -1, destination_wsy = -1;
-						int destination_wdx = -1, destination_wdy = -1;
-						double destination_wdsx = -1, destination_wdsy = -1;
-						double destination_wsa = -1;
-						if(destination_window % 2 == 1) // front
-						{
-							destination_wx = destination_line.get(0+BACKTRACK_DISTANCE).px;
-							destination_wy = destination_line.get(0+BACKTRACK_DISTANCE).py;
-							destination_wsx = destination_line.get(0+BACKTRACK_DISTANCE).sx;
-							destination_wsy = destination_line.get(0+BACKTRACK_DISTANCE).sx;
-							destination_wdx = destination_line.get(0+BACKTRACK_DISTANCE).px - destination_line.get(1+BACKTRACK_DISTANCE).px;
-							destination_wdy = destination_line.get(0+BACKTRACK_DISTANCE).py - destination_line.get(1+BACKTRACK_DISTANCE).py;
-							destination_wdsx = (destination_line.get(0+BACKTRACK_DISTANCE).px + destination_line.get(0+BACKTRACK_DISTANCE).sx) - (destination_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).px + destination_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sx);
-							destination_wdsy = (destination_line.get(0+BACKTRACK_DISTANCE).py + destination_line.get(0+BACKTRACK_DISTANCE).sy) - (destination_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).py + destination_line.get(1+BACKTRACK_DISTANCE+AVERAGING_DISTANCE).sy);
-							destination_wsa = Math.atan2(destination_wdsy, destination_wdsx);
-						}
-						else if(destination_window % 2 == 0) // back
-						{
-							destination_wx = destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).px;
-							destination_wy = destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).py;
-							destination_wsx = destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).sx;
-							destination_wsy = destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).sy;
-							destination_wdx = destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).px - destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-2).px;
-							destination_wdy = destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).py - destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-2).py;
-							destination_wdsx = (destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).px + destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).sx) - (destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).px + destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sx);
-							destination_wdsy = (destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).py + destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-1).sy) - (destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).py + destination_line.get(destination_line.size()-BACKTRACK_DISTANCE-AVERAGING_DISTANCE-2).sy);
-							destination_wsa = Math.atan2(destination_wdsy, destination_wdsx);
-						}
-						
-						// calculate distance between points
-						double dspx = (source_wx + source_wsx) - (destination_wx + destination_wsx);
-						double dspy = (source_wy + source_wsy) - (destination_wy + destination_wsy);
-						double diff_distance = Math.sqrt(dspx*dspx+dspy*dspy);
-							
-						// calculate difference in angle of traces
-						System.err.println("source_wsa = " + source_wsa*180/Math.PI);
-						System.err.println("destination_wsa = " + destination_wsa*180/Math.PI);
-						double diff_angle = Math.abs(source_wsa - destination_wsa);
-						System.err.println("diff_angle = " + diff_angle*180/Math.PI);
-						if(diff_angle > Math.PI)
-						{
-							diff_angle = (2*Math.PI) - diff_angle;
-							System.err.println("new diff_angle = " + diff_angle*180/Math.PI);
-						}
-						diff_angle = Math.PI - diff_angle; // NOTE: angle difference of 180 is optimal, 0 is -> flip angle so can be used as low cost
-						
-						// RSLV: move up to candidate match?
-						if(diff_angle > Math.toRadians(MAX_BENDING_ANGLE))
-						{
-							continue; // skip match
-						}
-						
-						double matching_cost = diff_angle;//+0.1*diff_distance; //diff_distance+5*3*SIGMA*diff_angle;//diff_distance+COST_FUNCTION_WEIGHT*diff_angle; // TODO: define cost function based on distance and orientation
-						
-						// check for better match
-						if(matching_cost < best_matching_cost)
-						{
-							best_matching_destination = destination;
-							best_matching_cost = matching_cost;
-							best_matching_line = destination_line;
-							best_matching_window = destination.second;
-						}
-					}
-					if(best_matching_destination != null && best_matching_line != null && best_matching_window != -1)
-					{
-						// skip if already matched
-	//					if(matched.contains(destination))
-	//					{
-	//						continue;
-	//					}
-						
-						// update destination:windows2 to source:window2
-						for(Map.Entry<Tuple<Line, Integer>, HashSet<Tuple<Line, Integer> > > e : candidate_matches.entrySet())
-						{
-							Tuple<Line, Integer> k = e.getKey();
-							HashSet<Tuple<Line, Integer> > v = e.getValue();
-							
-							for(Tuple<Line, Integer> d : v)
-							{
-								if(d.first == best_matching_line && d.second == (best_matching_window == 1 ? 2 : 1))
-								{
-									d.first = source_line;
-									d.second = source_window + 2;
+									// go to next pixel
+									tx += kx;
+									ty += ky;
+									tracing = true;
+									
+									// add pixel to line and clear from processing map
+									l.addLast(new Point(tx, ty, fitting_results[tx][ty][2]*results_step_3[tx][ty][1], fitting_results[tx][ty][2]*results_step_3[tx][ty][2])); // NOTE: addLast()!
+									processing_map_ip.set(tx, ty, 0);
 								}
 							}
 						}
-						//source_window += 2;
-						
-						// connect the two lines together
-						for(int i = 0; i < best_matching_line.size(); ++i)
+					}
+/*					
+					// start tracing possible second end
+					// RSLV: if tracing from end points; only on direction needs to be traced; making this next part redundant!
+					tx = px;
+					ty = py;
+					tracing = true;
+					while(tracing)
+					{
+						tracing = false;
+						for(int ky = -1; ky <= 1 && !tracing; ++ky)
 						{
-							if(source_window % 2 == 1 && best_matching_window % 2 == 1)
+							for(int kx = -1; kx <= 1 && !tracing; ++kx)
 							{
-								source_line.addFirst(best_matching_line.get(i));
-							}
-							else if(source_window % 2 == 1 && best_matching_window % 2 == 0)
-							{
-								source_line.addFirst(best_matching_line.get(best_matching_line.size()-i-1));
-							}
-							else if(source_window % 2 == 0 && best_matching_window % 2 == 1)
-							{
-								source_line.addLast(best_matching_line.get(i));
-							}
-							else if(source_window % 2 == 0 && best_matching_window % 2 == 0)
-							{
-								source_line.addLast(best_matching_line.get(best_matching_line.size()-i-1));
+								if(processing_map_ip.getPixel(tx+kx, ty+ky) == 255)
+								{
+									// go to next pixel
+									tx += kx;
+									ty += ky;
+									tracing = true;
+									
+									// add pixel to line and clear from processing map
+									l.addFirst(new Point(tx, ty, avg_fitting_results[tx][ty][2]*avg_results_step_3[tx][ty][1], avg_fitting_results[tx][ty][2]*avg_results_step_3[tx][ty][2])); // NOTE: addFirst()!
+									processing_map_ip.set(tx, ty, 0);
+								}
 							}
 						}
-						
-						// remove line
-						lines.remove(best_matching_line);
-						
-//						// add to list of matched end points
-//						matched.add(source);
-//						matched.add(best_matching_destination);
-						
-						changed = true;
-						break;
 					}
-					
-					if(changed)
-					{
-						break;
-					}
-				}
+*/				}
 			}
-//		}
+		}
 		
 		// *********************************************************************
 		
@@ -2127,7 +1408,7 @@ public class Trace_Microtubules implements PlugIn
 				for(int px = 0; px < image_width; ++px)
 				{
 					// check filter status of pixel
-					boolean filtered = (hit_map_filtered_ip.get(px, py) == 0); // RSLV: hit_count_map_ip.get(px, py) >= LINE_THREHSOLD?
+					boolean filtered = (hit_map_ip.get(px, py) == 0); // RSLV: hit_count_map_ip.get(px, py) >= LINE_THREHSOLD?
 					
 					// DEBUG: overlay vector on scaled image
 					double cx = px+0.5;
@@ -2653,7 +1934,7 @@ public class Trace_Microtubules implements PlugIn
 					raw_data_table.addValue("R2", r_squared_fit_results[px][py]); // R^2
 					
 					// filter status
-					raw_data_table.addValue("hit", hit_map_filtered_ip.get(px, py)); // hit map
+					raw_data_table.addValue("hit", hit_map_ip.get(px, py)); // hit map
 					raw_data_table.addValue("hit_count", hit_count_map_ip.get(px, py)); // hit count map
 				}
 			}
@@ -2757,7 +2038,7 @@ public class Trace_Microtubules implements PlugIn
 			polyline_s.setStrokeWidth(0.0);
 			lines_overlay.add(polyline_s);
 			
-////		roi_manager.addRoi(polyline_s); // RSLV: use add(imp, roi, index)?
+			roi_manager.addRoi(polyline_s); // RSLV: use add(imp, roi, index)?
 			
 			++line_color_index;
 		}
@@ -2777,7 +2058,7 @@ public class Trace_Microtubules implements PlugIn
 			LUT rainbow_lut = ConnectedComponents.getConnectedComponentLUT();
 			pixelated_traces_ip.setLut(rainbow_lut);
 			ImagePlus pixelated_traces_imp = new ImagePlus("Detected line traces", pixelated_traces_ip);
-		pixelated_traces_imp.show();
+			pixelated_traces_imp.show();
 //		}
 		
 		// show ROI manager
@@ -2785,9 +2066,6 @@ public class Trace_Microtubules implements PlugIn
 		roi_manager.toFront();
 		
 		// calculate measures
-		ResultsTable raw_data_table = ResultsTable.getResultsTable();
-		raw_data_table.setPrecision(5);
-		raw_data_table.showRowNumbers(false);
 		System.err.println("===== LINE MEASURES =====");
 		for(int i = 0; i < lines.size(); ++i)
 		{
@@ -2796,17 +2074,9 @@ public class Trace_Microtubules implements PlugIn
 			System.err.println("L_c = " + l.contourLength());
 			System.err.println("R-R = " + l.endToEndDistance());
 			System.err.println("L_p = " + l.persistenceLength());
-			
-			raw_data_table.incrementCounter();
-			raw_data_table.addValue("S#", SLICE_INDEX);
-			raw_data_table.addValue("L#", i);
-			raw_data_table.addValue("Lc", l.contourLength());
-			raw_data_table.addValue("Lr", l.endToEndDistance());
-			raw_data_table.addValue("Lp", l.persistenceLength());
 		}
-		raw_data_table.show("Results");
 		
-		return pixelated_traces_ip;
+		return null;
 	}
 	
 	// *************************************************************************
