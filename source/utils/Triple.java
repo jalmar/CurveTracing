@@ -1,3 +1,4 @@
+
 package utils;
 
 /**
@@ -6,9 +7,9 @@ package utils;
 public class Triple<A, B, C>
 {
 	// members
-	private A first;
-	private B second;
-	private C third;
+	public A first;
+	public B second;
+	public C third;
 	
 	// *************************************************************************
 	

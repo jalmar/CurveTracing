@@ -5,7 +5,9 @@ package plugins;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Vector;
+import java.util.Map;
 import java.util.HashMap;
+import java.util.HashSet;
 
 import java.awt.Color;
 
@@ -30,99 +32,68 @@ import ij.gui.Roi;
 import ij.gui.OvalRoi;
 import ij.gui.PolygonRoi; // for POLYLINE
 
+import ij.measure.ResultsTable;
+
 // import Jama classes
 import Jama.Matrix;
 import Jama.EigenvalueDecomposition;
 
 // import own classes
 //import algorithms.Stegers;
+import algorithms.LevenbergMarquardt;
 import filters.DerivativeOfGaussian;
 import filters.ConnectedComponents; // for rainbow LUT
 import core.Point;
 import core.Line;
+import utils.Profiling;
+import utils.Tuple;
 
 
 /**
  *	
  */
-public class Stegers_Algorithm implements PlugIn
+public class Classical_Stegers_Algorithm implements PlugIn
 {
 	/**
-	 *	Constants
+	 *	Parameters and constants
 	 */
-	public enum Mode { ABS_MAX, MAX, ABS_MIN, MIN };
-	public static final String[] MODES_S = new String[]{"Abs. max", "Max", "Abs. min", "Min"};
+	public static double SIGMA = 1.8;
+	public static double LINEPOINT_THRESHOLD = 0.5;
 	
-	public static final Mode DEFAULT_MODE = Mode.ABS_MAX;
-	public static final int DEFAULT_MODE_I = 0;
-	public static final String DEFAULT_MODE_S = MODES_S[DEFAULT_MODE_I];
+	public static boolean USE_GAUSSIAN_FIT_PEAKS_BEFORE = false;
+	public static boolean USE_GAUSSIAN_FIT_PEAKS_AFTER = false;
+	public static final int LMA_NUM_ITERATIONS = 5;
+	public static final double LMA_DEFAULT_LAMBDA = 0.001;
 	
-	public static Mode MODE = DEFAULT_MODE;
-	public static int MODE_I = DEFAULT_MODE_I;
-	public static String MODE_S = DEFAULT_MODE_S;
+	public static boolean USE_PRESET_USER_THRESHOLDS = false;
+	public static double UPPER_THRESHOLD = 5000.0;
+	public static double LOWER_THRESHOLD = 1000.0;
 	
-	public static final double DEFAULT_SIGMA = 1.8;
-	public static final double DEFAULT_SIGMA_RANGE = 0.0;
-	public static final int DEFAULT_SIGMA_STEPS = 1;
-	public static final double DEFAULT_LINEPOINT_THRESHOLD = 0.5;
+	public static boolean FILTER_MULTIRESPONSE = true;
+	public static double MULTIRESPONSE_THRESHOLD = 360.0 / 18;
 	
-	public static double SIGMA = DEFAULT_SIGMA;
-	public static double SIGMA_RANGE = DEFAULT_SIGMA_RANGE;
-	public static int SIGMA_STEPS = DEFAULT_SIGMA_STEPS;
-	public static double LINEPOINT_THRESHOLD = DEFAULT_LINEPOINT_THRESHOLD;
+	public static boolean PREVENT_SPLINTER_FRAGMENTS = true;
+	public static int SPLINTER_FRAGMENT_THRESHOLD = 5;
 	
-	public static final boolean DEFAULT_USE_PRESET_USER_THRESHOLDS = false;
-	public static final double DEFAULT_UPPER_THRESHOLD = 5000.0; // RSLV: convert to percentage of histogram?
-	public static final double DEFAULT_LOWER_THRESHOLD = 1000.0; // RSLV: convert to percentage of histogram?
+	public static boolean INCLUDE_JUNCTIONS_IN_LINE = true;
+	public static boolean INCLUDE_FIRST_PROCESSED_IN_LINE = true;
 	
-	public static boolean USE_PRESET_USER_THRESHOLDS = DEFAULT_USE_PRESET_USER_THRESHOLDS;
-	public static double UPPER_THRESHOLD = DEFAULT_UPPER_THRESHOLD;
-	public static double LOWER_THRESHOLD = DEFAULT_LOWER_THRESHOLD;
+	public static double COST_FUNCTION_WEIGHT = 1.0;
 	
-	public static final boolean DEFAULT_FILTER_MULTIRESPONSE = true;
-	public static final double DEFAULT_MULTIRESPONSE_THRESHOLD = 360.0 / 18.0; // about 20 degrees parallelism
+	public static boolean ENABLE_LINKING = true;
+	public static double MAX_BENDING_ANGLE = 30.0;
 	
-	public static boolean FILTER_MULTIRESPONSE = DEFAULT_FILTER_MULTIRESPONSE;
-	public static double MULTIRESPONSE_THRESHOLD = DEFAULT_MULTIRESPONSE_THRESHOLD;
+	public static boolean FILTER_SHORT_LINE_SEGMENTS = true;
+	public static int LINE_LENGTH_THRESHOLD = 10;
 	
-	public static final boolean DEFAULT_PREVENT_SPLINTER_FRAGMENTS = true;
-	public static final int DEFAULT_SPLINTER_FRAGMENT_THRESHOLD = 3;
-	
-	public static boolean PREVENT_SPLINTER_FRAGMENTS = DEFAULT_PREVENT_SPLINTER_FRAGMENTS;
-	public static int SPLINTER_FRAGMENT_THRESHOLD = DEFAULT_SPLINTER_FRAGMENT_THRESHOLD;
-	
-	public static final boolean DEFAULT_FILTER_SHORT_LINE_SEGMENTS = true;
-	public static final int DEFAULT_LINE_LENGTH_THRESHOLD = 10;
-	
-	public static boolean FILTER_SHORT_LINE_SEGMENTS = DEFAULT_FILTER_SHORT_LINE_SEGMENTS;
-	public static int LINE_LENGTH_THRESHOLD = DEFAULT_LINE_LENGTH_THRESHOLD;
-	
-	public static final boolean DEFAULT_INCLUDE_JUNCTIONS_IN_LINE = true;
-	
-	public static boolean INCLUDE_JUNCTIONS_IN_LINE = DEFAULT_INCLUDE_JUNCTIONS_IN_LINE;
-	
-	public static final boolean DEFAULT_INCLUDE_FIRST_PROCESSED_IN_LINE = true;
-	
-	public static boolean INCLUDE_FIRST_PROCESSED_IN_LINE = DEFAULT_INCLUDE_FIRST_PROCESSED_IN_LINE;
-	
-	public static final double DEFAULT_COST_FUNCTION_WEIGHT = 1.0;
-	
-	public static double COST_FUNCTION_WEIGHT = DEFAULT_COST_FUNCTION_WEIGHT;
-	
-	public static final boolean DEFAULT_USE_WEINGARTEN_MATRIX = false;
-	
-	public static boolean USE_WEINGARTEN_MATRIX = DEFAULT_USE_WEINGARTEN_MATRIX;
-	
-	public static final boolean DEFAULT_DEBUG_MODE_ENABLED = true;
-	
-	public static boolean DEBUG_MODE_ENABLED = DEFAULT_DEBUG_MODE_ENABLED;
+	public static boolean DEBUG_MODE_ENABLED = false;
 	
 	// ////////////////////////////////////////////////////////////////////////
 	
 	/**
 	 *	Constructor
 	 */
-	public Stegers_Algorithm()
+	public Classical_Stegers_Algorithm()
 	{
 		/* do nothing */
 	}
@@ -137,48 +108,46 @@ public class Stegers_Algorithm implements PlugIn
 		
 		// ask for parameters
 		GenericDialog gd = new GenericDialog("Steger's algorithm");
-		gd.addChoice("Mode", MODES_S, Prefs.get("stegers.mode_s", DEFAULT_MODE_S));
+		
+		gd.addNumericField("Sigma", Prefs.get("stegers.sigma", SIGMA), 2);
+		gd.addNumericField("Linepoint_threshold", Prefs.get("stegers.linepoint_threshold", LINEPOINT_THRESHOLD), 3);
+		gd.addCheckbox("Use_gaussian_fit_peaks_before", Prefs.get("stegers.use_gaussian_fit_peaks_before", USE_GAUSSIAN_FIT_PEAKS_BEFORE));
+		gd.addCheckbox("Use_gaussian_fit_peaks_after", Prefs.get("stegers.use_gaussian_fit_peaks_after", USE_GAUSSIAN_FIT_PEAKS_AFTER));
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
-		gd.addNumericField("Sigma", Prefs.get("stegers.sigma", DEFAULT_SIGMA), 2);
-//		gd.addNumericField("Sigma_range", Prefs.get("stegers.sigma_range", DEFAULT_SIGMA_RANGE), 2);
-//		gd.addNumericField("Sigma_steps", Prefs.get("stegers.sigma_steps", DEFAULT_SIGMA_STEPS), 0);
-		gd.addNumericField("Linepoint_threshold", Prefs.get("stegers.linepoint_threshold", DEFAULT_LINEPOINT_THRESHOLD), 2);
+		gd.addCheckbox("Use_preset_user_thresholds", Prefs.get("stegers.preset_user_thresholds", USE_PRESET_USER_THRESHOLDS));
+		gd.addNumericField("Upper_threshold", Prefs.get("stegers.upper_threshold", UPPER_THRESHOLD), 0);
+		gd.addNumericField("Lower_threshold", Prefs.get("stegers.lower_threshold", LOWER_THRESHOLD), 0);
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
-		gd.addCheckbox("Use_preset_user_thresholds", Prefs.get("stegers.preset_user_thresholds", DEFAULT_USE_PRESET_USER_THRESHOLDS));
-		gd.addNumericField("Upper_threshold", Prefs.get("stegers.upper_threshold", DEFAULT_UPPER_THRESHOLD), 0);
-		gd.addNumericField("Lower_threshold", Prefs.get("stegers.lower_threshold", DEFAULT_LOWER_THRESHOLD), 0);
+		gd.addCheckbox("Filter_multiresponse", Prefs.get("stegers.filter_multiresponse", FILTER_MULTIRESPONSE));
+		gd.addNumericField("Multireponse_angle_threshold", Prefs.get("stegers.multiresponse_threshold", MULTIRESPONSE_THRESHOLD), 2);
+		
+		gd.addCheckbox("Prevent_splinter_fragments", Prefs.get("stegers.prevent_splinter_fragments", PREVENT_SPLINTER_FRAGMENTS));
+		gd.addNumericField("Splinter_fragment_threshold", Prefs.get("stegers.splinter_fragment_threshold", SPLINTER_FRAGMENT_THRESHOLD), 0);
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
-		gd.addCheckbox("Filter_multiresponse", Prefs.get("stegers.filter_multiresponse", DEFAULT_FILTER_MULTIRESPONSE));
-		gd.addNumericField("Multireponse_angle_threshold", Prefs.get("stegers.multiresponse_threshold", DEFAULT_MULTIRESPONSE_THRESHOLD), 2);
-		
-		gd.addCheckbox("Prevent_splinter_fragments", Prefs.get("stegers.prevent_splinter_fragments", DEFAULT_PREVENT_SPLINTER_FRAGMENTS));
-		gd.addNumericField("Splinter_fragment_threshold", Prefs.get("stegers.splinter_fragment_threshold", DEFAULT_SPLINTER_FRAGMENT_THRESHOLD), 0);
-		
-		gd.addCheckbox("Filter_short_line_segments", Prefs.get("stegers.filter_short_line_segments", DEFAULT_FILTER_SHORT_LINE_SEGMENTS));
-		gd.addNumericField("Line_length_threshold", Prefs.get("stegers.line_length_threshold", DEFAULT_LINE_LENGTH_THRESHOLD), 0);
+		gd.addCheckbox("Include_junctions", Prefs.get("stegers.include_junctions", INCLUDE_JUNCTIONS_IN_LINE));
+		gd.addCheckbox("Include_first_processed", Prefs.get("stegers.include_first_processed", INCLUDE_FIRST_PROCESSED_IN_LINE));
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
-		gd.addCheckbox("Include_junctions", Prefs.get("stegers.include_junctions", DEFAULT_INCLUDE_JUNCTIONS_IN_LINE));
-		gd.addCheckbox("Include_first_processed", Prefs.get("stegers.include_first_processed", DEFAULT_INCLUDE_FIRST_PROCESSED_IN_LINE));
+		gd.addNumericField("Cost_function_weight", Prefs.get("stegers.cost_function_weight", COST_FUNCTION_WEIGHT), 2);
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
-		gd.addNumericField("Cost_funtion_weight", Prefs.get("stegers.cost_function_weight", DEFAULT_COST_FUNCTION_WEIGHT), 2);
+		gd.addCheckbox("Enable_linking", Prefs.get("stegers.enable_linking", ENABLE_LINKING));
+		gd.addNumericField("Max_bending_angle", Prefs.get("stegers.max_bending_angle", MAX_BENDING_ANGLE), 0);
+		
+		gd.addCheckbox("Filter_short_line_segments", Prefs.get("stegers.filter_short_line_segments", FILTER_SHORT_LINE_SEGMENTS));
+		gd.addNumericField("Line_length_threshold", Prefs.get("stegers.line_length_threshold", LINE_LENGTH_THRESHOLD), 0);
 		
 		gd.setInsets(10, 20, 0); // seperate parameter groups
 		
-//		gd.addCheckbox("Use_Weingarten_matrix", Prefs.get("stegers.weingarten_matrix", DEFAULT_USE_WEINGARTEN_MATRIX));
-		
-		gd.setInsets(10, 20, 0); // seperate parameter groups
-		
-		gd.addCheckbox("Enable_debug_mode", Prefs.get("stegers.debug_mode", DEFAULT_DEBUG_MODE_ENABLED));
+		gd.addCheckbox("Enable_debug_mode", Prefs.get("stegers.debug_mode", DEBUG_MODE_ENABLED));
 		
 		gd.setOKLabel("Trace");
 		
@@ -186,14 +155,11 @@ public class Stegers_Algorithm implements PlugIn
 		if(gd.wasCanceled()) return;
 		
 		// retrieve parameters
-		MODE_I = gd.getNextChoiceIndex();
-		MODE_S = MODES_S[MODE_I];
-		MODE = Mode.values()[MODE_I];
-		
 		SIGMA = gd.getNextNumber();
-//		SIGMA_RANGE = gd.getNextNumber();
-//		SIGMA_STEPS = (int)gd.getNextNumber();
 		LINEPOINT_THRESHOLD = gd.getNextNumber();
+		
+		USE_GAUSSIAN_FIT_PEAKS_BEFORE = gd.getNextBoolean();
+		USE_GAUSSIAN_FIT_PEAKS_AFTER = gd.getNextBoolean();
 		
 		USE_PRESET_USER_THRESHOLDS = gd.getNextBoolean();
 		UPPER_THRESHOLD = gd.getNextNumber();
@@ -205,24 +171,24 @@ public class Stegers_Algorithm implements PlugIn
 		PREVENT_SPLINTER_FRAGMENTS = gd.getNextBoolean();
 		SPLINTER_FRAGMENT_THRESHOLD = (int)gd.getNextNumber();
 		
-		FILTER_SHORT_LINE_SEGMENTS = gd.getNextBoolean();
-		LINE_LENGTH_THRESHOLD = (int)gd.getNextNumber();
-		
 		INCLUDE_JUNCTIONS_IN_LINE = gd.getNextBoolean();
 		INCLUDE_FIRST_PROCESSED_IN_LINE = gd.getNextBoolean();
 		
 		COST_FUNCTION_WEIGHT = gd.getNextNumber();
 		
-//		USE_WEINGARTEN_MATRIX = gd.getNextBoolean();
+		ENABLE_LINKING = gd.getNextBoolean();
+		MAX_BENDING_ANGLE = gd.getNextNumber();
+		
+		FILTER_SHORT_LINE_SEGMENTS = gd.getNextBoolean();
+		LINE_LENGTH_THRESHOLD = (int)gd.getNextNumber();
 		
 		DEBUG_MODE_ENABLED = gd.getNextBoolean();
 		
 		// store parameters in preferences
-		Prefs.set("stegers.mode_s", MODE_S);
 		Prefs.set("stegers.sigma", SIGMA);
-//		Prefs.set("stegers.sigma_range", SIGMA_RANGE);
-//		Prefs.set("stegers.sigma_steps", SIGMA_STEPS);
 		Prefs.set("stegers.linepoint_threshold", LINEPOINT_THRESHOLD);
+		Prefs.set("stegers.use_gaussian_fit_peaks_before", USE_GAUSSIAN_FIT_PEAKS_BEFORE);
+		Prefs.set("stegers.use_gaussian_fit_peaks_after", USE_GAUSSIAN_FIT_PEAKS_AFTER);
 		Prefs.set("stegers.preset_user_thresholds", USE_PRESET_USER_THRESHOLDS);
 		Prefs.set("stegers.upper_threshold", UPPER_THRESHOLD);
 		Prefs.set("stegers.lower_threshold", LOWER_THRESHOLD);
@@ -230,12 +196,13 @@ public class Stegers_Algorithm implements PlugIn
 		Prefs.set("stegers.multiresponse_threshold", MULTIRESPONSE_THRESHOLD);
 		Prefs.set("stegers.prevent_splinter_fragments", PREVENT_SPLINTER_FRAGMENTS);
 		Prefs.set("stegers.splinter_fragment_threshold", SPLINTER_FRAGMENT_THRESHOLD);
-		Prefs.set("stegers.filter_short_line_segments", FILTER_SHORT_LINE_SEGMENTS);
-		Prefs.set("stegers.line_length_threshold", LINE_LENGTH_THRESHOLD);
 		Prefs.set("stegers.include_junctions", INCLUDE_JUNCTIONS_IN_LINE);
 		Prefs.set("stegers.include_first_processed", INCLUDE_FIRST_PROCESSED_IN_LINE);
 		Prefs.set("stegers.cost_function_weight", COST_FUNCTION_WEIGHT);
-//		Prefs.set("stegers.weingarten_matrix", USE_WEINGARTEN_MATRIX);
+		Prefs.set("stegers.enable_linking", ENABLE_LINKING);
+		Prefs.set("stegers.max_bending_angle", MAX_BENDING_ANGLE);
+		Prefs.set("stegers.filter_short_line_segments", FILTER_SHORT_LINE_SEGMENTS);
+		Prefs.set("stegers.line_length_threshold", LINE_LENGTH_THRESHOLD);
 		Prefs.set("stegers.debug_mode", DEBUG_MODE_ENABLED);
 		
 		// execute filter
@@ -261,12 +228,12 @@ public class Stegers_Algorithm implements PlugIn
 	
 	public static void stegersAlgorithm(ImagePlus imp)
 	{
-		stegersAlgorithm(imp, DEFAULT_SIGMA);
+		stegersAlgorithm(imp, SIGMA);
 	}
 	
 	public static void stegersAlgorithm(ImagePlus imp, double sigma)
 	{
-		stegersAlgorithm(imp, sigma, DEFAULT_LINEPOINT_THRESHOLD);
+		stegersAlgorithm(imp, sigma, LINEPOINT_THRESHOLD);
 	}
 	
 	public static void stegersAlgorithm(ImagePlus imp, double sigma, double linepoint_threshold)
@@ -280,7 +247,11 @@ public class Stegers_Algorithm implements PlugIn
 		int image_width = ip.getWidth();
 		int image_height = ip.getHeight();
 		
-		// STEP 1: calculate Gaussian derivatives, Hessian matrix, eigenvalues and eigenvector, determine Taylor polynomical response function peak position
+		// *********************************************************************
+		
+		// STEP: calculate Gaussian derivatives, Hessian matrix, eigenvalues and eigenvector, determine Taylor polynomical response function peak position
+		Profiling.tic();
+		IJ.showStatus("Calculating Eigen decomposition of Hessian matrix");
 		
 		// store intermediate results in table
 		//	[px][py][0] = lambda1_magnitude		n(t)
@@ -293,150 +264,165 @@ public class Stegers_Algorithm implements PlugIn
 		//	[px][py][7] = super-resolved_y		t_y, or dlpy
 		double[][][] line_points = new double[image_width][image_height][8];
 		
-		ImageProcessor dx = new FloatProcessor(image_width, image_height);
-		ImageProcessor dy = new FloatProcessor(image_width, image_height);
-		ImageProcessor dxdx = new FloatProcessor(image_width, image_height);
-		ImageProcessor dxdy = new FloatProcessor(image_width, image_height);
-		ImageProcessor dydx = new FloatProcessor(image_width, image_height);
-		ImageProcessor dydy = new FloatProcessor(image_width, image_height);
+		// calculate derivatives of gaussian from image
+		ImageProcessor dx = DerivativeOfGaussian.derivativeX(ip, SIGMA);
+		ImageProcessor dy = DerivativeOfGaussian.derivativeY(ip, SIGMA);
+		ImageProcessor dxdx = DerivativeOfGaussian.derivativeXX(ip, SIGMA);
+		ImageProcessor dxdy = DerivativeOfGaussian.derivativeXY(ip, SIGMA);
+		ImageProcessor dydx = dxdy;//DerivativeOfGaussian.derivativeYX(ip, SIGMA);
+		ImageProcessor dydy = DerivativeOfGaussian.derivativeYY(ip, SIGMA);
 		
-		double[][] sigma_map = new double[image_width][image_height];
-		ImageProcessor sigma_map_ip = new FloatProcessor(image_width, image_height);
-		
-		// search scale space: maximize selected eigenvalue's response
-		double lower_sigma = sigma - SIGMA_RANGE;
-		double upper_sigma = sigma + SIGMA_RANGE;
-		double step_sigma = (upper_sigma - lower_sigma) / (SIGMA_STEPS > 1 ? SIGMA_STEPS - 1 : SIGMA_STEPS); // 2 * SIGMA_RANGE / SIGMA_STEPS
-		for(int k = 0; k < SIGMA_STEPS; ++k) //(double current_sigma = lower_sigma; current_sigma <= upper_sigma; current_sigma += step_sigma)
+		// calculate line points from eigenvalues and eigenvectors based on Hessian matrix
+		for(int py = 0; py < image_height; ++py)
 		{
-			// calculate current sigma
-			double current_sigma = lower_sigma + k * step_sigma;
-			System.err.println("current_sigma = " + current_sigma);
+			for(int px = 0; px < image_width; ++px)
+			{
+				// construct Hessian matrix in Jama
+				Matrix m = null; // NOTE: beware of null-pointer exceptions!
+				m = new Matrix(2, 2, 0); // 2x2 RC matrix with zeros
+				m.set(0, 0, dxdx.getf(px, py));
+				m.set(0, 1, dxdy.getf(px, py));
+				m.set(1, 0, dydx.getf(px, py));
+				m.set(1, 1, dydy.getf(px, py));
+				//System.err.println("Cond="+h.cond());
+				
+				// compute eigenvalues and eigenvectors
+				EigenvalueDecomposition evd = m.eig();
+				Matrix d = evd.getD();
+				Matrix v = evd.getV();
+				
+				// determine largest absolute (perpendicular -> n(t)) and smallest absolute (parallel -> s(t)) eigenvalue and corresponding eigenvector
+				double first_eigenvalue = 0.0; // |n(t)|
+				double nx = 0.0; // n(t) -> perpendicular to s(t)
+				double ny = 0.0; // n(t) -> perpendicular to s(t)
+				double second_eigenvalue = 0.0;
+				double sx = 0.0;
+				double sy = 0.0;
+				if(d.get(0,0) <= d.get(1,1))
+				{
+					first_eigenvalue = d.get(0,0);
+					nx = v.get(0,0);
+					ny = v.get(1,0);
+					second_eigenvalue = d.get(1,1);
+					sx = v.get(0,1);
+					sy = v.get(1,1);
+				}
+				else
+				{
+					first_eigenvalue = d.get(1,1);
+					nx = v.get(0,1);
+					ny = v.get(1,1);
+					second_eigenvalue = d.get(0,0);
+					sx = v.get(0,0);
+					sy = v.get(1,0);
+				}
+				
+				// reorient  eigenvecors in same general direction
+				if(ny < 0)
+				{
+					nx = -nx;
+					ny = -ny;
+				}
+				
+				if(sy < 0)
+				{
+					sx = -sx;
+					sy = -sy;
+				}
+				
+				// calculate position of line point and filter line points
+				double t = (dx.getf(px,py)*nx + dy.getf(px,py)*ny) / (dxdx.getf(px,py)*nx*nx + dxdy.getf(px,py)*nx*ny + dydx.getf(px,py)*ny*nx + dydy.getf(px,py)*ny*ny);
+				double dlpx = t*nx;
+				double dlpy = t*ny;
+				
+				// store line point information
+				line_points[px][py][0] = first_eigenvalue;
+				line_points[px][py][1] = nx;
+				line_points[px][py][2] = ny;
+				line_points[px][py][3] = second_eigenvalue;
+				line_points[px][py][4] = sx;
+				line_points[px][py][5] = sy;
+				line_points[px][py][6] = dlpx;
+				line_points[px][py][7] = dlpy;
+			}
+		}
+		Profiling.toc("Calculating Eigen decomposition of Hessian matrix");
+		
+		// ---------------------------------------------------------------------
+		
+		// STEP: override Taylor peak estimation with Gaussian peak fit
+		if(USE_GAUSSIAN_FIT_PEAKS_BEFORE)
+		{
+			Profiling.tic();
+			IJ.showStatus("Fitting Gaussian line profiles to pixels");
 			
-			// calculate derivatives of gaussian from image
-			ImageProcessor dx_t = DerivativeOfGaussian.derivativeX(ip, current_sigma);
-			ImageProcessor dy_t = DerivativeOfGaussian.derivativeY(ip, current_sigma);
-			ImageProcessor dxdx_t = DerivativeOfGaussian.derivativeXX(ip, current_sigma);
-			ImageProcessor dxdy_t = DerivativeOfGaussian.derivativeXY(ip, current_sigma);
-			ImageProcessor dydx_t = dxdy_t;//DerivativeOfGaussian.derivativeYX(ip, current_sigma);
-			ImageProcessor dydy_t = DerivativeOfGaussian.derivativeYY(ip, current_sigma);
-			
-			// calculate line points from eigenvalues and eigenvectors based on Hessian matrix
 			for(int py = 0; py < image_height; ++py)
 			{
 				for(int px = 0; px < image_width; ++px)
 				{
-					// construct Hessian matrix in Jama
-					Matrix m = null; // NOTE: beware of null-pointer exceptions!
-					if(USE_WEINGARTEN_MATRIX)
-					{
-						double dx_squared = dx_t.getf(px, py) * dx_t.getf(px, py);
-						double dy_squared = dy_t.getf(px, py) * dy_t.getf(px, py);
-						double dx_times_dy = dx_t.getf(px, py) * dy_t.getf(px, py);
-						double dy_times_dx = dx_times_dy; // dy.getf(px, py) * dx.getf(px, py);
-						
-						Matrix f1 = new Matrix(2, 2, 0); // 2x2 RC matrix with zeros
-						f1.set(0, 0, 1 + dx_squared);
-						f1.set(0, 1, dx_times_dy);
-						f1.set(1, 0, dy_times_dx);
-						f1.set(1, 1, 1 + dy_squared);
-						
-						Matrix f2 = new Matrix(2, 2, 0); // 2x2 RC matrix with zeros
-						f2.set(0, 0, dxdx_t.getf(px, py));
-						f2.set(0, 1, dxdy_t.getf(px, py));
-						f2.set(1, 0, dydx_t.getf(px, py));
-						f2.set(1, 1, dydy_t.getf(px, py));
-						
-						m = f2.times(f1.inverse());
-						//m.timesEquals(-1 / Math.sqrt(1 + dx_squared + dy_squared)); // inplace scalar multiplication: same as m = m.times(-1 / Math.sqrt(1 + dx_squared + dy_squared));
-					}
-					else
-					{
-						// use Hessian matrix
-						m = new Matrix(2, 2, 0); // 2x2 RC matrix with zeros
-						m.set(0, 0, dxdx_t.getf(px, py));
-						m.set(0, 1, dxdy_t.getf(px, py));
-						m.set(1, 0, dydx_t.getf(px, py));
-						m.set(1, 1, dydy_t.getf(px, py));
-						//System.err.println("Cond="+h.cond());
-					}
+					// get center pixel and vector orientation from previous step
+					double cx = px;
+					double cy = py;
+					double nx = line_points[px][py][1];
+					double ny = line_points[px][py][2];
 					
-					// compute eigenvalues and eigenvectors
-					EigenvalueDecomposition evd = m.eig();
-					Matrix d = evd.getD();
-					Matrix v = evd.getV();
-					
-					// determine largest absolute (perpendicular -> n(t)) and smallest absolute (parallel -> s(t)) eigenvalue and corresponding eigenvector
-					double selected_eigenvalue = 0.0; // |n(t)|
-					double nx = 0.0; // n(t) -> perpendicular to s(t)
-					double ny = 0.0; // n(t) -> perpendicular to s(t)
-					double second_eigenvalue = 0.0;
-					double sx = 0.0;
-					double sy = 0.0;
-					if((MODE == Mode.ABS_MAX && Math.abs(d.get(0,0)) >= Math.abs(d.get(1,1))) // Stegers*: absolute maximum
-					|| (MODE == Mode.MAX && d.get(0,0) >= d.get(1,1)) // real maximum
-					|| (MODE == Mode.ABS_MIN && Math.abs(d.get(0,0)) <= Math.abs(d.get(1,1))) // absolute minimum
-					|| (MODE == Mode.MIN && d.get(0,0) <= d.get(1,1))) // real minimum
+					// extract line profile data from *original* image
+					ip.setInterpolationMethod(ImageProcessor.BILINEAR);
+					int line_profile_width = (int)Math.ceil(3*SIGMA); // RSLV: 3*sigma minimum? Currently using ceil!
+					int data_points = 2*line_profile_width+1;
+					double[] x_data = new double[data_points];
+					double[] y_data = new double[data_points];
+					double min_value = Double.MAX_VALUE; // keep track of minimum value
+					double max_value = Double.MIN_VALUE; // keep track of maximum value
+					double mean_value = 0.0;
+					 int ii = -line_profile_width;
+					for(int i = 0; i < data_points; ++i)
 					{
-						selected_eigenvalue = d.get(0,0);
-						nx = v.get(0,0);
-						ny = v.get(1,0);
-						second_eigenvalue = d.get(1,1);
-						sx = v.get(0,1);
-						sy = v.get(1,1);
-					}
-					else
-					{
-						selected_eigenvalue = d.get(1,1);
-						nx = v.get(0,1);
-						ny = v.get(1,1);
-						second_eigenvalue = d.get(0,0);
-						sx = v.get(0,0);
-						sy = v.get(1,0);
-					}
-					
-					// calculate position of line point and filter line points
-					double t = ((dx_t.getf(px,py)*nx + dy_t.getf(px,py)*ny) / (dxdx_t.getf(px,py)*nx*nx + dxdy_t.getf(px,py)*nx*ny + dydx_t.getf(px,py)*ny*nx + dydy_t.getf(px,py)*ny*ny)); // NOTE: removed '-' from start of equation!!
-					double dlpx = t*nx;
-					double dlpy = t*ny;
-					
-					// store line point information (only if larger than previous scale space search)
-					// RSLV: always absolute value?
-					if(Math.abs(selected_eigenvalue) > Math.abs(line_points[px][py][0]))
-					{
-						line_points[px][py][0] = selected_eigenvalue;
-						line_points[px][py][1] = nx;
-						line_points[px][py][2] = ny;
-						line_points[px][py][3] = second_eigenvalue;
-						line_points[px][py][4] = sx;
-						line_points[px][py][5] = sy;
-						line_points[px][py][6] = dlpx;
-						line_points[px][py][7] = dlpy;
+						// interpolated x,y
+						double ix = cx + ii * nx;
+						double iy = cy + ii * ny;
+						double pv = ip.getPixelInterpolated(ix, iy); // NOTE: *original* image!
+						x_data[i] = ii; // NOTE use relative x-coordinate!!
+						y_data[i] = pv;
 						
-						dx.setf(px, py, dx_t.getf(px, py));
-						dy.setf(px, py, dy_t.getf(px, py));
-						dxdx.setf(px, py, dxdx_t.getf(px, py));
-						dxdy.setf(px, py, dxdy_t.getf(px, py));
-						dydx.setf(px, py, dydx_t.getf(px, py));
-						dydy.setf(px, py, dydy_t.getf(px, py));
+						// update min/max value
+						min_value = Math.min(min_value, pv);
+						max_value = Math.max(max_value, pv);
+						mean_value += pv;
 						
-						sigma_map[px][py] = current_sigma;
-						sigma_map_ip.setf(px, py, (float)current_sigma);
+						// increment ii
+						++ii;
 					}
+					mean_value /= data_points;
+					
+					// initial parameter estimation
+					double background = min_value;
+					double amplitude = max_value - min_value;
+					double mu = 0; // 0 = center in relative coordinate system
+					double sig = SIGMA;
+					double[] initial_parameters = new double[]{background, amplitude, mu, sig};
+					
+					// set up new LMA instance
+					LevenbergMarquardt lma = new LevenbergMarquardt();
+					
+					// run LMA fitting procedure
+					double[] fitted_parameters = lma.run(x_data, y_data, data_points, initial_parameters, LMA_NUM_ITERATIONS, LMA_DEFAULT_LAMBDA);
+					
+					// store result of fitting: only peak information
+					line_points[px][py][6] = fitted_parameters[2]*nx;
+					line_points[px][py][7] = fitted_parameters[2]*ny;
 				}
 			}
-		} // end scale space search
-		
-		if(DEBUG_MODE_ENABLED)
+			Profiling.toc("Fitting line profiles");
+		}
+		else
 		{
-			ImagePlus sigma_map_imp = new ImagePlus("Sigma map", sigma_map_ip);
-			sigma_map_imp.resetDisplayRange();
-//			sigma_map_imp.show();
+			IJ.showStatus("Skipping step: fitting line profiles");
 		}
 		
 		// *********************************************************************
 		
-		// STEP 2: filter line points using Taylor polynomial response function fit and distance criterion of peak from pixel center
+		// STEP: filter line points using Taylor polynomial response function fit and distance criterion of peak from pixel center
 		boolean[][] valid_line_points_mask = new boolean[image_width][image_height];
 		double[][] valid_line_points_magnitude = new double[image_width][image_height];
 		
@@ -469,6 +455,8 @@ public class Stegers_Algorithm implements PlugIn
 			}
 		}
 		
+		// ---------------------------------------------------------------------
+		
 		// show debug images
 		if(DEBUG_MODE_ENABLED)
 		{
@@ -484,9 +472,79 @@ public class Stegers_Algorithm implements PlugIn
 		
 		// *********************************************************************
 		
-		// STEP 3: trace lines; requires two user specified thresholds
+		// STEP: override Taylor peak estimation with Gaussian peak fit
+		if(USE_GAUSSIAN_FIT_PEAKS_AFTER)
+		{
+			Profiling.tic();
+			IJ.showStatus("Fitting Gaussian line profiles to pixels");
+			
+			for(int py = 0; py < image_height; ++py)
+			{
+				for(int px = 0; px < image_width; ++px)
+				{
+					// get center pixel and vector orientation from previous step
+					double cx = px;
+					double cy = py;
+					double nx = line_points[px][py][1];
+					double ny = line_points[px][py][2];
+					
+					// extract line profile data from *original* image
+					ip.setInterpolationMethod(ImageProcessor.BILINEAR);
+					int line_profile_width = (int)Math.ceil(3*SIGMA); // RSLV: 3*sigma minimum? Currently using ceil!
+					int data_points = 2*line_profile_width+1;
+					double[] x_data = new double[data_points];
+					double[] y_data = new double[data_points];
+					double min_value = Double.MAX_VALUE; // keep track of minimum value
+					double max_value = Double.MIN_VALUE; // keep track of maximum value
+					double mean_value = 0.0;
+					 int ii = -line_profile_width;
+					for(int i = 0; i < data_points; ++i)
+					{
+						// interpolated x,y
+						double ix = cx + ii * nx;
+						double iy = cy + ii * ny;
+						double pv = ip.getPixelInterpolated(ix, iy); // NOTE: *original* image!
+						x_data[i] = ii; // NOTE use relative x-coordinate!!
+						y_data[i] = pv;
+						
+						// update min/max value
+						min_value = Math.min(min_value, pv);
+						max_value = Math.max(max_value, pv);
+						mean_value += pv;
+						
+						// increment ii
+						++ii;
+					}
+					mean_value /= data_points;
+					
+					// initial parameter estimation
+					double background = min_value;
+					double amplitude = max_value - min_value;
+					double mu = 0; // 0 = center in relative coordinate system
+					double sig = SIGMA;
+					double[] initial_parameters = new double[]{background, amplitude, mu, sig};
+					
+					// set up new LMA instance
+					LevenbergMarquardt lma = new LevenbergMarquardt();
+					
+					// run LMA fitting procedure
+					double[] fitted_parameters = lma.run(x_data, y_data, data_points, initial_parameters, LMA_NUM_ITERATIONS, LMA_DEFAULT_LAMBDA);
+					
+					// store result of fitting: only peak information
+					line_points[px][py][6] = fitted_parameters[2]*nx;
+					line_points[px][py][7] = fitted_parameters[2]*ny;
+				}
+			}
+			Profiling.toc("Fitting line profiles");
+		}
+		else
+		{
+			IJ.showStatus("Skipping step: fitting line profiles");
+		}
 		
-		// get user threshold levels (interactive)
+		// ---------------------------------------------------------------------
+		
+		// STEP: get user threshold levels (interactive)
 		if(!USE_PRESET_USER_THRESHOLDS)
 		{
 			ImageProcessor threshold_tmp_ip = valid_line_points_magnitude_ip.duplicate();
@@ -600,7 +658,9 @@ public class Stegers_Algorithm implements PlugIn
 			}
 		}
 		
-		// STEP 3a: first find all valid lines above threshold in descending order
+		// ---------------------------------------------------------------------
+		
+		// STEP: order seeding points from high saliency to low saliency
 		Vector<Vector<Double> > high_threshold_points = new Vector<Vector<Double> >();
 		for(int px = 0; px < image_width; ++px)
 		{
@@ -625,8 +685,11 @@ public class Stegers_Algorithm implements PlugIn
 			}
 		});
 		
+		// ---------------------------------------------------------------------
+		
+		// STEP: trace lines using Steger's line point linking algorithm
+		
 		// intermediate containers and flags
-		HashMap<Integer, Vector<Line> > junctions_map = new HashMap<Integer, Vector<Line> >(); // RSLV: create tuple class for key; Tuple<Integer, Integer> for x,y-coordinate?
 		Line[][] point_to_line_map = new Line[image_width][image_height]; // NOTE: for computational efficiency of finding which line belongs to a point
 		int[][] processing_map = new int[image_width][image_height];
 		int DEFAULT = 0x00;
@@ -674,7 +737,6 @@ public class Stegers_Algorithm implements PlugIn
 			
 			// *****************************************************************
 			
-			//for(int trace_direction = 0; trace_direction != 180; trace_direction = 180)
 			double[] trace_directions = new double[]{0, 180};
 			for(int tdi = 0; tdi < trace_directions.length; ++tdi)
 			{
@@ -774,6 +836,7 @@ public class Stegers_Algorithm implements PlugIn
 							double ddist_x = (dp_px + dp_dlpx) - (tp_px + tp_dlpx);
 							double ddist_y = (dp_py + dp_dlpy) - (tp_py + tp_dlpy);
 							double ddist = Math.sqrt(ddist_x * ddist_x + ddist_y * ddist_y);
+							
 							double dtheta = Math.abs(dp_sa - tp_sa); // NOTE: use s(t), not n(t), although should not matter
 							System.err.println("dtheta="+dtheta);
 							if(dtheta > 180.0) // NOTE: bigger than, not equal!
@@ -787,6 +850,7 @@ public class Stegers_Algorithm implements PlugIn
 								System.err.println("corrected dtheta="+dtheta);
 							}
 							dtheta *= Math.PI / 180.0; // deg to rad
+							
 							double cost = ddist + COST_FUNCTION_WEIGHT * dtheta;
 							
 							System.err.println("  cost=" + ddist + "+" +  COST_FUNCTION_WEIGHT + "*" + dtheta + "=" + cost);
@@ -851,86 +915,74 @@ public class Stegers_Algorithm implements PlugIn
 					{
 						System.err.println("  Point is available");
 						
-						// NOTE: check for below lower threshold is moved up where selecting the best neighbour; this avoids having two lines that meet, but not connected
-//						// skip if next neighbour below lowest threshold level
-//						double np_pv = line_points[np_px][np_py][0];
-//						if(Math.abs(np_pv) < LOWER_THRESHOLD)
-//						{
-//							System.err.println("  Next point is below lower threshold");
-//							// stop tracing
-//							tracing = false;
-//						}
-//						else
-//						{
-							// add point to line
-							if(trace_direction == 0)
-							{
-								line.addFirst(new Point(np_px, np_py, np_dlpx, np_dlpy));
-							}
-							else
-							{
-								line.addLast(new Point(np_px, np_py, np_dlpx, np_dlpy));
-							}
-							point_to_line_map[np_px][np_py] = line;
-							processing_map[np_px][np_py] = LINEPOINT;
-							processing_map_ip.set(np_px, np_py, LINEPOINT);
+						// add point to line
+						if(trace_direction == 0)
+						{
+							line.addFirst(new Point(np_px, np_py, np_dlpx, np_dlpy));
+						}
+						else
+						{
+							line.addLast(new Point(np_px, np_py, np_dlpx, np_dlpy));
+						}
+						point_to_line_map[np_px][np_py] = line;
+						processing_map[np_px][np_py] = LINEPOINT;
+						processing_map_ip.set(np_px, np_py, LINEPOINT);
+						
+						if(FILTER_MULTIRESPONSE)
+						{
+							// mark perpendicular neighbours with similar orientation as processed
+							int[] pp = getNextPixel(np_ni);
+							int pp1_dx = pp[0];
+							int pp1_dy = pp[1];
+							int pp2_dx = -pp1_dx; // NOTE: pp2_dx = -pp1_dx
+							int pp2_dy = -pp1_dy; // NOTE: pp2_dy = -pp1_dy
 							
-							if(FILTER_MULTIRESPONSE)
+							// parallel point 1
+							int pp1_px = np_px + pp1_dx;
+							int pp1_py = np_py + pp1_dy;
+							if(pp1_px >= 0 && pp1_px < image_width && pp1_py >= 0 && pp1_py < image_height)
 							{
-								// mark perpendicular neighbours with similar orientation as processed
-								int[] pp = getNextPixel(np_ni);
-								int pp1_dx = pp[0];
-								int pp1_dy = pp[1];
-								int pp2_dx = -pp1_dx; // NOTE: pp2_dx = -pp1_dx
-								int pp2_dy = -pp1_dy; // NOTE: pp2_dy = -pp1_dy
+								double pp1_nx = line_points[pp1_px][pp1_py][1];
+								double pp1_ny = line_points[pp1_px][pp1_py][2];
+								double pp1_na = getAngle(pp1_nx, pp1_ny); //Math.atan2(pp1_ny, pp1_nx);
+								int pp1_ni = getOrientationIndex(pp1_na);
+								double pp1_sx = line_points[pp1_px][pp1_py][4];
+								double pp1_sy = line_points[pp1_px][pp1_py][5];
+								double pp1_sa = getAngle(pp1_sx, pp1_sy); //Math.atan2(pp1_sy, pp1_sx);
+								int pp1_si = getOrientationIndex(pp1_sa);
 								
-								// parallel point 1
-								int pp1_px = np_px + pp1_dx;
-								int pp1_py = np_py + pp1_dy;
-								if(pp1_px >= 0 && pp1_px < image_width && pp1_py >= 0 && pp1_py < image_height)
+								// mark as processed if roughly the same orientation as current point
+								if((processing_map[pp1_px][pp1_py] == AVAILABLE || processing_map[pp1_px][pp1_py] == LIMITED) && Math.abs((pp1_na % 180.0) - (np_na % 180.0)) <= MULTIRESPONSE_THRESHOLD)
 								{
-									double pp1_nx = line_points[pp1_px][pp1_py][1];
-									double pp1_ny = line_points[pp1_px][pp1_py][2];
-									double pp1_na = getAngle(pp1_nx, pp1_ny); //Math.atan2(pp1_ny, pp1_nx);
-									int pp1_ni = getOrientationIndex(pp1_na);
-									double pp1_sx = line_points[pp1_px][pp1_py][4];
-									double pp1_sy = line_points[pp1_px][pp1_py][5];
-									double pp1_sa = getAngle(pp1_sx, pp1_sy); //Math.atan2(pp1_sy, pp1_sx);
-									int pp1_si = getOrientationIndex(pp1_sa);
-									
-									// mark as processed if roughly the same orientation as current point
-									if((processing_map[pp1_px][pp1_py] == AVAILABLE || processing_map[pp1_px][pp1_py] == LIMITED) && Math.abs((pp1_na % 180.0) - (np_na % 180.0)) <= MULTIRESPONSE_THRESHOLD)
-									{
-										System.err.println("Checkpoint D");
-										processing_map[pp1_px][pp1_py] = PROCESSED;
-										processing_map_ip.set(pp1_px, pp1_py, PROCESSED);
-									}
-								}
-								
-								// parallel point 2
-								int pp2_px = np_px + pp2_dx;
-								int pp2_py = np_py + pp2_dy;
-								if(pp2_px >= 0 && pp2_px < image_width && pp2_py >= 0 && pp2_py < image_height)
-								{
-									double pp2_nx = line_points[pp2_px][pp2_py][1];
-									double pp2_ny = line_points[pp2_px][pp2_py][2];
-									double pp2_na = getAngle(pp2_nx, pp2_ny); //Math.atan2(pp2_ny, pp2_nx);
-									int pp2_ni = getOrientationIndex(pp2_na);
-									double pp2_sx = line_points[pp2_px][pp2_py][4];
-									double pp2_sy = line_points[pp2_px][pp2_py][5];
-									double pp2_sa = getAngle(pp2_sx, pp2_sy); //Math.atan2(pp2_sy, pp2_sx);
-									int pp2_si = getOrientationIndex(pp2_sa);
-									
-									// mark as processed if roughly the same orientation as current point
-									if((processing_map[pp2_px][pp2_py] == AVAILABLE || processing_map[pp2_px][pp2_py] == LIMITED) && Math.abs((pp2_na % 180.0) - (np_na % 180.0)) <= MULTIRESPONSE_THRESHOLD)
-									{
-										System.err.println("Checkpoint E");
-										processing_map[pp2_px][pp2_py] = PROCESSED;
-										processing_map_ip.set(pp2_px, pp2_py, PROCESSED);
-									}
+									System.err.println("Checkpoint D");
+									processing_map[pp1_px][pp1_py] = PROCESSED;
+									processing_map_ip.set(pp1_px, pp1_py, PROCESSED);
 								}
 							}
-//						}
+							
+							// parallel point 2
+							int pp2_px = np_px + pp2_dx;
+							int pp2_py = np_py + pp2_dy;
+							if(pp2_px >= 0 && pp2_px < image_width && pp2_py >= 0 && pp2_py < image_height)
+							{
+								double pp2_nx = line_points[pp2_px][pp2_py][1];
+								double pp2_ny = line_points[pp2_px][pp2_py][2];
+								double pp2_na = getAngle(pp2_nx, pp2_ny); //Math.atan2(pp2_ny, pp2_nx);
+								int pp2_ni = getOrientationIndex(pp2_na);
+								double pp2_sx = line_points[pp2_px][pp2_py][4];
+								double pp2_sy = line_points[pp2_px][pp2_py][5];
+								double pp2_sa = getAngle(pp2_sx, pp2_sy); //Math.atan2(pp2_sy, pp2_sx);
+								int pp2_si = getOrientationIndex(pp2_sa);
+								
+								// mark as processed if roughly the same orientation as current point
+								if((processing_map[pp2_px][pp2_py] == AVAILABLE || processing_map[pp2_px][pp2_py] == LIMITED) && Math.abs((pp2_na % 180.0) - (np_na % 180.0)) <= MULTIRESPONSE_THRESHOLD)
+								{
+									System.err.println("Checkpoint E");
+									processing_map[pp2_px][pp2_py] = PROCESSED;
+									processing_map_ip.set(pp2_px, pp2_py, PROCESSED);
+								}
+							}
+						}
 					}
 					else if(processing_map[np_px][np_py] == PROCESSED)
 					{
@@ -947,13 +999,13 @@ public class Stegers_Algorithm implements PlugIn
 							{
 								line.addLast(new Point(np_px, np_py, np_dlpx, np_dlpy));
 							}
+							
+							// RSLV: mark as line point?
+							processing_map[np_px][np_py] = LINEPOINT;
+							
+							// add to point to line map
+							point_to_line_map[np_px][np_py] = line;
 						}
-						
-						// RSLV: mark as line point?
-						processing_map[np_px][np_py] = LINEPOINT;
-						
-						// add to point to line map
-						point_to_line_map[np_px][np_py] = line;
 						
 						// stop tracing
 						tracing = false;
@@ -978,7 +1030,7 @@ public class Stegers_Algorithm implements PlugIn
 						}
 						else
 						{
-							if(jp_pos <= SPLINTER_FRAGMENT_THRESHOLD || (line_a.size() - jp_pos) <= SPLINTER_FRAGMENT_THRESHOLD)
+							if(PREVENT_SPLINTER_FRAGMENTS && (jp_pos <= SPLINTER_FRAGMENT_THRESHOLD || (line_a.size() - jp_pos) <= SPLINTER_FRAGMENT_THRESHOLD))
 							{
 								System.err.println("Not splitting line to avoid fragmentation");
 							}
@@ -1008,24 +1060,25 @@ public class Stegers_Algorithm implements PlugIn
 								{
 									point_to_line_map[pb.px][pb.py] = line_b;
 								}
-							}
-						}
-						
-						// mark point as junction
-						processing_map[np_px][np_py] = JUNCTION;
-						processing_map_ip.set(np_px, np_py, JUNCTION);
-						point_to_line_map[np_px][np_py] = null;
-						
-						// add junction point to current line trace
-						if(INCLUDE_JUNCTIONS_IN_LINE)
-						{
-							if(trace_direction == 0)
-							{
-								line.addFirst(new Point(np_px, np_py, np_dlpx, np_dlpy));
-							}
-							else
-							{
-								line.addLast(new Point(np_px, np_py, np_dlpx, np_dlpy));
+								
+								// mark point as junction
+								processing_map[np_px][np_py] = JUNCTION;
+								processing_map_ip.set(np_px, np_py, JUNCTION);
+								point_to_line_map[np_px][np_py] = null;
+								
+								// add junction point to current line trace
+								if(INCLUDE_JUNCTIONS_IN_LINE)
+								{
+									if(trace_direction == 0)
+									{
+										line.addFirst(new Point(np_px, np_py, np_dlpx, np_dlpy));
+									}
+									else
+									{
+										line.addLast(new Point(np_px, np_py, np_dlpx, np_dlpy));
+									}
+								}
+								
 							}
 						}
 						
@@ -1063,11 +1116,11 @@ public class Stegers_Algorithm implements PlugIn
 			}
 			
 			// prevent small fragments
-			if(line.size() <= SPLINTER_FRAGMENT_THRESHOLD)
+			if(PREVENT_SPLINTER_FRAGMENTS && line.size() <= SPLINTER_FRAGMENT_THRESHOLD)
 			{
 				System.err.println("Rejecting small line fragment");
+				// TOOD: What to when lines have been split by fragment?!
 				lines.remove(line);
-				
 				for(Point p : line)
 				{
 					point_to_line_map[p.px][p.py] = null;
@@ -1076,28 +1129,14 @@ public class Stegers_Algorithm implements PlugIn
 			}
 		}
 		
-		// ------
+		// ---------------------------------------------------------------------
 		
 		if(DEBUG_MODE_ENABLED)
 		{
 			ImagePlus processing_map_imp = new ImagePlus("Processing map", processing_map_ip);
 			processing_map_imp.setDisplayRange(0,4); // NOTE: keep up to date with number of processing types
-			processing_map_imp.show();
+//			processing_map_imp.show();
 		}
-		
-		// *********************************************************************
-		
-		// TODO: connect lines at/near junctions [5x5 search window]
-		
-		// *********************************************************************
-		
-		// TODO: connect lines at a slightly more global scale
-		// for each line
-		//   check both end point
-		//      extend window into direction of line (say 15 pixels long, 10 pixels wide)
-		//      if another lines endpoint is within reach
-		//         connect these two lines together
-		//         option: smooth out connection (i.e. drop first couple of points from endpoint)
 		
 		// *********************************************************************
 		
@@ -1107,7 +1146,7 @@ public class Stegers_Algorithm implements PlugIn
 			Vector<Line> new_lines = new Vector<Line>();
 			for(Line l : lines)
 			{
-				if(l != null && l.size() >= LINE_LENGTH_THRESHOLD)
+				if(l != null && l.contourLength() >= LINE_LENGTH_THRESHOLD)
 				{
 					new_lines.add(l);
 				}
@@ -1145,7 +1184,7 @@ public class Stegers_Algorithm implements PlugIn
 		for(Line l : lines)
 		{
 			// skip empty lines
-			if(l == null || l.size() == 0) continue;
+			if(l == null || l.size() < 3) continue;
 			
 			// add origin marker to overlay
 			OvalRoi origin_p = new OvalRoi(l.getFirst().px + 0.375, l.getFirst().py + 0.375, 0.25, 0.25);
@@ -1194,12 +1233,12 @@ public class Stegers_Algorithm implements PlugIn
 			ImagePlus overlay_imp = new ImagePlus("Steger's algorithm line traces", overlay_ip);
 			overlay_imp.setOverlay(lines_overlay);
 			//overlay.updateAndRepaintWindow();
-			overlay_imp.show();
+//			overlay_imp.show();
 			
 			ImagePlus overlay2_imp = new ImagePlus("Steger's algorithm line traces", overlay2_ip);
 			overlay2_imp.setOverlay(lines_overlay);
 			//overlay.updateAndRepaintWindow();
-			overlay2_imp.show();
+//			overlay2_imp.show();
 			
 			LUT rainbow_lut = ConnectedComponents.getConnectedComponentLUT();
 			pixelated_traces_ip.setLut(rainbow_lut);
@@ -1207,9 +1246,30 @@ public class Stegers_Algorithm implements PlugIn
 			pixelated_traces_imp.show();
 		}
 		
-		// RSLV: return image with overlay?
+		// show ROI manager
 		roi_manager.setVisible(true);
 		roi_manager.toFront();
+		
+		// calculate statistics on line segments
+/*		ResultsTable results_table = ResultsTable.getResultsTable();
+		results_table.reset();
+		for(Line l : lines)
+		{
+			// calculate metrics
+			double contour_length = l.contourLength();
+			double persistence_length = l.persistenceLength();
+			double end_to_end_distance = l.endToEndDistance();
+			
+			// add metrics
+			results_table.incrementCounter();
+			results_table.addValue("Contour length", contour_length);
+			results_table.addValue("Persistence length", persistence_length);
+			results_table.addValue("End-to-end distance", end_to_end_distance);
+		}
+		results_table.showRowNumbers(true);
+		results_table.show("Results");
+*/		
+		// RSLV: return image with overlay?
 		return null;
 	}
 	

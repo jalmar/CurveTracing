@@ -1,3 +1,4 @@
+
 package utils;
 
 /**
@@ -6,8 +7,8 @@ package utils;
 public class Tuple<A, B>
 {
 	// members
-	private A first;
-	private B second;
+	public A first;
+	public B second;
 	
 	// *************************************************************************
 	

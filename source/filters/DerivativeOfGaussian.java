@@ -3,9 +3,9 @@ package filters;
 
 // import ImageJ classes
 import ij.IJ.*;
-import ij.ImagePlus;
 import ij.process.ImageProcessor;
 import ij.process.FloatProcessor;
+//import ij.ImagePlus;
 
 
 /**
@@ -123,8 +123,6 @@ public class DerivativeOfGaussian
 	{
 		// convolve image with DoG_dx_dx kernel
 		double[][] kernel = computeKernelGaussian2D_du_du(sigma_x, sigma_y, theta);
-//		ImagePlus kernel_imp = new ImagePlus("kernel d^2/x^2 " + sigma_x + " " + sigma_y + " " + Math.toDegrees(theta), kernelToImage(kernel));
-//		kernel_imp.show();
 		return convolve(ip, kernel);
 	}
 	
@@ -158,8 +156,6 @@ public class DerivativeOfGaussian
 	{
 		// convolve image with DoG_dy_dy kernel
 		double[][] kernel = computeKernelGaussian2D_dv_dv(sigma_x, sigma_y, theta);
-//		ImagePlus kernel_imp = new ImagePlus("kernel d^2/y^2 " + sigma_x + " " + sigma_y + " " + Math.toDegrees(theta), kernelToImage(kernel));
-//		kernel_imp.show();
 		return convolve(ip, kernel);
 	}
 	
@@ -708,6 +704,10 @@ public class DerivativeOfGaussian
 		}
 		
 		// return normalized kernel
+//		ImageProcessor kernel_ip = kernelToImage(kernel);
+//		ImagePlus kernel_imp = new ImagePlus("normalized kernel", kernel_ip);
+//		kernel_imp.resetDisplayRange();
+//		kernel_imp.show();
 		return kernel;
 	}
 	
