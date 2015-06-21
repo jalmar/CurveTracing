@@ -2,6 +2,8 @@
 package filters;
 
 // import ImageJ classes
+import Jama.EigenvalueDecomposition;
+import Jama.Matrix;
 import ij.IJ.*;
 import ij.process.ImageProcessor;
 import ij.process.FloatProcessor;
@@ -223,6 +225,165 @@ public class DerivativeOfGaussian
 		// convolve image with DoG_dy_dx kernel
 		double[][] kernel = computeKernelGaussian2D_dv_du(sigma_x, sigma_y, theta);
 		return convolve(ip, kernel);
+	}
+	
+	public static double[][][] get_line_points(ImageProcessor ip, double sigma)
+	{
+		int image_width = ip.getWidth();
+		int image_height = ip.getHeight();
+		
+		//final line points
+		double[][][] line_points = new double[image_width][image_height][8];
+		// store results of eigendecomposition
+		//	[px][py][0] = lambda1_magnitude		n(t)
+		//	[px][py][1] = lambda1_direction_x	n_x(t)
+		//	[px][py][2] = lambda1_direction_y	n_y(t)
+		//	[px][py][3] = lambda2_magnitude		s(t)
+		//	[px][py][4] = lambda2_direction_x	s_x(t)
+		//	[px][py][5] = lambda2_direction_y	s_y(t)
+		//	[px][py][6] = super-resolved_x		t_x, or dlpx
+		//	[px][py][7] = super-resolved_y		t_y, or dlpy		
+
+		// calculate derivatives of gaussian from image
+		ImageProcessor dx = derivativeX(ip, sigma);
+		ImageProcessor dy = derivativeY(ip, sigma);
+		ImageProcessor dxdx = derivativeXX(ip, sigma);
+		ImageProcessor dxdy = derivativeXY(ip, sigma);
+		ImageProcessor dydx = dxdy;//DerivativeOfGaussian.derivativeYX(ip, SIGMA);
+		ImageProcessor dydy = derivativeYY(ip, sigma);
+
+		//calculate Eigen decomposition of Hessian matrix
+		for(int py = 0; py < image_height; ++py)
+		{
+			for(int px = 0; px < image_width; ++px)
+			{
+				Matrix m = new Matrix(2, 2, 0); // 2x2 RC matrix with zeros
+				m.set(0, 0, dxdx.getf(px, py));
+				m.set(0, 1, dxdy.getf(px, py));
+				m.set(1, 0, dydx.getf(px, py));
+				m.set(1, 1, dydy.getf(px, py));
+				
+				// compute eigenvalues and eigenvectors
+				EigenvalueDecomposition evd = m.eig();
+				Matrix d = evd.getD();
+				Matrix v = evd.getV();
+				
+				// determine first and second eigenvalue and eigenvector
+				double first_eigenvalue = 0.0; // |n(t)|
+				double first_eigenvector_x = 0.0; // n(t) -> perpendicular to s(t)
+				double first_eigenvector_y = 0.0; // n(t) -> perpendicular to s(t)
+				double second_eigenvalue = 0.0;
+				double second_eigenvector_x = 0.0;
+				double second_eigenvector_y = 0.0;
+				
+				if(d.get(0,0) <= d.get(1,1))
+				{
+					// d(0,0) is most negative minimum eigenvalue
+					first_eigenvalue = d.get(0,0); // L1
+					first_eigenvector_x = v.get(0,0); // V1x
+					first_eigenvector_y = v.get(1,0); // V1y
+					second_eigenvalue = d.get(1,1); // L2
+					second_eigenvector_x = v.get(0,1); // V2x
+					second_eigenvector_y = v.get(1,1); // V2y
+				}
+				else
+				{
+					// d(1,1) is most negative minimum eigenvalue
+					first_eigenvalue = d.get(1,1); // L1
+					first_eigenvector_x = v.get(0,1); // V1x
+					first_eigenvector_y = v.get(1,1); // V1y
+					second_eigenvalue = d.get(0,0); // L2
+					second_eigenvector_x = v.get(0,0); // V2x
+					second_eigenvector_y = v.get(1,0); // V2y
+				}
+				
+				// reorient all eigenvecors in same direction
+				if(first_eigenvector_y < 0)
+				{
+					first_eigenvector_x = -first_eigenvector_x;
+					first_eigenvector_y = -first_eigenvector_y;
+				}
+				
+				if(second_eigenvector_y < 0)
+				{
+					second_eigenvector_x = -second_eigenvector_x;
+					second_eigenvector_y = -second_eigenvector_y;
+				}
+				
+				// store eigenvalues and eigenvector for new optimum
+				line_points[px][py][0] = first_eigenvalue;
+				line_points[px][py][1] = first_eigenvector_x;
+				line_points[px][py][2] = first_eigenvector_y;
+				line_points[px][py][3] = second_eigenvalue;
+				line_points[px][py][4] = second_eigenvector_x;
+				line_points[px][py][5] = second_eigenvector_y;
+				
+				// calculate position of peak in second order Taylor polynomial from Steger's algorithm
+				double t = -(dx.getf(px,py)*first_eigenvector_x + dy.getf(px,py)*first_eigenvector_y)/(dxdx.getf(px,py)*first_eigenvector_x*first_eigenvector_x + dxdy.getf(px,py)*dydx.getf(px,py)*first_eigenvector_x*first_eigenvector_y + dydy.getf(px,py)*first_eigenvector_y*first_eigenvector_y);
+				double dlpx = t*first_eigenvector_x;
+				double dlpy = t*first_eigenvector_y;
+				
+				// store line point
+				line_points[px][py][6] = dlpx;
+				line_points[px][py][7] = dlpy;
+			}
+		}
+		
+		
+		return line_points;
+	}
+	
+	public static double[][][] frangi_measures(double[][][] line_points, int image_height, int image_width, double frangi_beta, double frangi_c)
+	{
+		// store Frangi measures on eigenvalues; NOTE: |L1| <= |L2|
+		// beta is control parameter, set at 0.5
+		// c dependens on image bit depth, about half maximum Hessian matrix norm
+		//	[0] = frangi L1
+		//	[1] = frangi L2
+		//	[2] = blobness (eccentricity), L1 / L2; note: keep sign!
+		//	[3] = second order structureness, RSS of eigenvalues, or Frobius norm
+		//	[4] = vesselness = exp(-[2]^2/2*FRANGI_BETA^2)(1-exp(-[3]^2/2*FRANGI_C^2))
+
+		double[][][] frangi_measures = new double[image_width][image_height][5];
+		double frangi_l1;
+		double frangi_l2;
+		double first_eigenvalue, second_eigenvalue; 
+		for(int py = 0; py < image_height; ++py)
+		{
+			for(int px = 0; px < image_width; ++px)
+			{
+				// calculate Frangi measures
+				first_eigenvalue = line_points[px][py][0];
+				second_eigenvalue = line_points[px][py][3];
+
+				if(Math.abs(first_eigenvalue) > Math.abs(second_eigenvalue))
+				{
+					frangi_l1 = second_eigenvalue;
+					frangi_l2 = first_eigenvalue;
+				}
+				else
+				{
+					frangi_l1 = first_eigenvalue;
+					frangi_l2 = second_eigenvalue;
+				}
+				
+				double eccentricity = frangi_l1 / (frangi_l2 + 1e20); // NOTE: beware of division by zero!
+				double structureness = Math.sqrt(frangi_l1*frangi_l1+frangi_l2*frangi_l2); // ro Frobius norm
+				double fm = Math.exp(-((eccentricity*eccentricity)/(2*frangi_beta*frangi_beta))) * (1-Math.exp(-((structureness*structureness))/(2*frangi_c*frangi_c)));
+				if(frangi_l2 > 0)
+				{
+					fm = 0.0;
+				}
+				// store Frangi measures
+				frangi_measures[px][py][0] = frangi_l1;
+				frangi_measures[px][py][1] = frangi_l2;
+				frangi_measures[px][py][2] = eccentricity;
+				frangi_measures[px][py][3] = structureness;
+				frangi_measures[px][py][4] = fm;
+				
+			}			
+		}
+		return frangi_measures;
 	}
 	
 	// ////////////////////////////////////////////////////////////////////////

@@ -416,130 +416,18 @@ public class Trace_Microtubules_ODFs implements PlugIn
 		
 		// Step 3a: eigenvalue/vector decomposition of Hessian matrix
 		
-		// store results of eigendecomposition
-		//	[px][py][0] = lambda1_magnitude		n(t)
-		//	[px][py][1] = lambda1_direction_x	n_x(t)
-		//	[px][py][2] = lambda1_direction_y	n_y(t)
-		//	[px][py][3] = lambda2_magnitude		s(t)
-		//	[px][py][4] = lambda2_direction_x	s_x(t)
-		//	[px][py][5] = lambda2_direction_y	s_y(t)
-		//	[px][py][6] = super-resolved_x		t_x, or dlpx
-		//	[px][py][7] = super-resolved_y		t_y, or dlpy
-		double[][][] results_step_3 = new double[image_width][image_height][8];
-		Profiling.tic();
-		IJ.showStatus("Calculating derivative of gaussian");
+		double[][][] results_step_3;
 		
 		// store Frangi measures on eigenvalues; NOTE: |L1| <= |L2|
-		// beta is control parameter, set at 0.5
-		// c dependens on image bit depth, about half maximum Hessian matrix norm
-		//	[0] = frangi L1
-		//	[1] = frangi L2
-		//	[2] = blobness (eccentricity), L1 / L2; note: keep sign!
-		//	[3] = second order structureness, RSS of eigenvalues, or Frobius norm
-		//	[4] = vesselness = exp(-[2]^2/2*FRANGI_BETA^2)(1-exp(-[3]^2/2*FRANGI_C^2))
-		double[][][] frangi_measures = new double[image_width][image_height][5];
-		
-		// calculate derivatives of gaussian from image
+		double[][][] frangi_measures;
+				
 		Profiling.tic();
-		IJ.showStatus("Calculating derivative of gaussian");
+		IJ.showStatus("Step 3b: Calculating Eigen decomposition of Hessian matrix");
+
+		//get line points
+		results_step_3 = DerivativeOfGaussian.get_line_points(ip_step_2, SIGMA);
 		
-		ImageProcessor dx = DerivativeOfGaussian.derivativeX(ip_step_2, SIGMA);
-		ImageProcessor dy = DerivativeOfGaussian.derivativeY(ip_step_2, SIGMA);
-		ImageProcessor dxdx = DerivativeOfGaussian.derivativeXX(ip_step_2, SIGMA);
-		ImageProcessor dxdy = DerivativeOfGaussian.derivativeXY(ip_step_2, SIGMA);
-		ImageProcessor dydx = dxdy;//DerivativeOfGaussian.derivativeYX(ip_step_2, SIGMA);
-		ImageProcessor dydy = DerivativeOfGaussian.derivativeYY(ip_step_2, SIGMA);
-		Profiling.toc("Step 3a: Calculating image derivatives");
-		
-		// Step 3b: calculate Eigen decomposition of Hessian matrix
-		Profiling.tic();
-		IJ.showStatus("Calculating Eigen decomposition of Hessian matrix");
-		for(int py = 0; py < image_height; ++py)
-		{
-			for(int px = 0; px < image_width; ++px)
-			{
-				Matrix m = new Matrix(2, 2, 0); // 2x2 RC matrix with zeros
-				m.set(0, 0, dxdx.getf(px, py));
-				m.set(0, 1, dxdy.getf(px, py));
-				m.set(1, 0, dydx.getf(px, py));
-				m.set(1, 1, dydy.getf(px, py));
-				
-				// compute eigenvalues and eigenvectors
-				EigenvalueDecomposition evd = m.eig();
-				Matrix d = evd.getD();
-				Matrix v = evd.getV();
-				
-				// determine first and second eigenvalue and eigenvector
-				double first_eigenvalue = 0.0; // |n(t)|
-				double first_eigenvector_x = 0.0; // n(t) -> perpendicular to s(t)
-				double first_eigenvector_y = 0.0; // n(t) -> perpendicular to s(t)
-				double second_eigenvalue = 0.0;
-				double second_eigenvector_x = 0.0;
-				double second_eigenvector_y = 0.0;
-				
-				if(d.get(0,0) <= d.get(1,1))
-				{
-					// d(0,0) is most negative minimum eigenvalue
-					first_eigenvalue = d.get(0,0); // L1
-					first_eigenvector_x = v.get(0,0); // V1x
-					first_eigenvector_y = v.get(1,0); // V1y
-					second_eigenvalue = d.get(1,1); // L2
-					second_eigenvector_x = v.get(0,1); // V2x
-					second_eigenvector_y = v.get(1,1); // V2y
-				}
-				else
-				{
-					// d(1,1) is most negative minimum eigenvalue
-					first_eigenvalue = d.get(1,1); // L1
-					first_eigenvector_x = v.get(0,1); // V1x
-					first_eigenvector_y = v.get(1,1); // V1y
-					second_eigenvalue = d.get(0,0); // L2
-					second_eigenvector_x = v.get(0,0); // V2x
-					second_eigenvector_y = v.get(1,0); // V2y
-				}
-				
-				// store eigenvalues and eigenvector for new optimum
-				results_step_3[px][py][0] = first_eigenvalue;
-				results_step_3[px][py][1] = first_eigenvector_x;
-				results_step_3[px][py][2] = first_eigenvector_y;
-				results_step_3[px][py][3] = second_eigenvalue;
-				results_step_3[px][py][4] = second_eigenvector_x;
-				results_step_3[px][py][5] = second_eigenvector_y;
-				
-				// calculate Frangi measures
-				double frangi_l1 = first_eigenvalue;
-				double frangi_l2 = second_eigenvalue;
-				if(Math.abs(first_eigenvalue) > Math.abs(second_eigenvalue))
-				{
-					frangi_l1 = second_eigenvalue;
-					frangi_l2 = first_eigenvalue;
-				}
-				
-				double eccentricity = frangi_l1 / (frangi_l2 + 1e20); // NOTE: beware of division by zero!
-				double structureness = Math.sqrt(frangi_l1*frangi_l1+frangi_l2*frangi_l2); // ro Frobius norm
-				double fm = Math.exp(-((eccentricity*eccentricity)/(2*FRANGI_BETA*FRANGI_BETA))) * (1-Math.exp(-((structureness*structureness))/(2*FRANGI_C*FRANGI_C)));
-				if(frangi_l2 > 0)
-				{
-					fm = 0.0;
-				}
-				
-				// store Frangi measures
-				frangi_measures[px][py][0] = frangi_l1;
-				frangi_measures[px][py][1] = frangi_l2;
-				frangi_measures[px][py][2] = eccentricity;
-				frangi_measures[px][py][3] = structureness;
-				frangi_measures[px][py][4] = fm;
-				
-				// calculate position of peak in second order Taylor polynomial from Steger's algorithm
-				double t = -(dx.getf(px,py)*first_eigenvector_x + dy.getf(px,py)*first_eigenvector_y)/(dxdx.getf(px,py)*first_eigenvector_x*first_eigenvector_x + dxdy.getf(px,py)*dydx.getf(px,py)*first_eigenvector_x*first_eigenvector_y + dydy.getf(px,py)*first_eigenvector_y*first_eigenvector_y);
-				double dlpx = t*first_eigenvector_x;
-				double dlpy = t*first_eigenvector_y;
-				
-				// store line point
-				results_step_3[px][py][6] = dlpx;
-				results_step_3[px][py][7] = dlpy;
-			}
-		}
+		frangi_measures = DerivativeOfGaussian.frangi_measures( results_step_3, image_height, image_width, FRANGI_BETA, FRANGI_C); 
 		Profiling.toc("Step 3b: Calculating Eigen decomposition of Hessian matrix");
 		
 		// show intermediate images
@@ -2325,12 +2213,13 @@ public class Trace_Microtubules_ODFs implements PlugIn
 					raw_data_table.addValue("pv", ip_original.get(px, py));
 					
 					// gradients
+					/*
 					raw_data_table.addValue("dx", dx.getf(px, py));
 					raw_data_table.addValue("dy", dy.getf(px, py));
 					raw_data_table.addValue("dxdx", dxdx.getf(px, py));
 					raw_data_table.addValue("dxdy", dxdy.getf(px, py));
 					raw_data_table.addValue("dydx", dydx.getf(px, py));
-					raw_data_table.addValue("dydy", dydy.getf(px, py));
+					raw_data_table.addValue("dydy", dydy.getf(px, py));*/
 					
 					// Hessian matrix
 					raw_data_table.addValue("L1", results_step_3[px][py][0]); // L1

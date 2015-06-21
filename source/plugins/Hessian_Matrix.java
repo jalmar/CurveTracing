@@ -250,102 +250,11 @@ public class Hessian_Matrix implements PlugIn
 		// *********************************************************************
 		
 		// STEP: calculate Gaussian derivatives, Hessian matrix, eigenvalues and eigenvector, determine Taylor polynomical response function peak position
+		// 
 		Profiling.tic();
-		IJ.showStatus("Calculating Eigen decomposition of Hessian matrix");
-		
-		// store intermediate results in table
-		//	[px][py][0] = lambda1_magnitude		n(t)
-		//	[px][py][1] = lambda1_direction_x	n_x(t)
-		//	[px][py][2] = lambda1_direction_y	n_y(t)
-		//	[px][py][3] = lambda2_magnitude		s(t)
-		//	[px][py][4] = lambda2_direction_x	s_x(t)
-		//	[px][py][5] = lambda2_direction_y	s_y(t)
-		//	[px][py][6] = super-resolved_x		t_x, or dlpx
-		//	[px][py][7] = super-resolved_y		t_y, or dlpy
-		double[][][] line_points = new double[image_width][image_height][8];
-		
-		// calculate derivatives of gaussian from image
-		ImageProcessor dx = DerivativeOfGaussian.derivativeX(ip, SIGMA);
-		ImageProcessor dy = DerivativeOfGaussian.derivativeY(ip, SIGMA);
-		ImageProcessor dxdx = DerivativeOfGaussian.derivativeXX(ip, SIGMA);
-		ImageProcessor dxdy = DerivativeOfGaussian.derivativeXY(ip, SIGMA);
-		ImageProcessor dydx = dxdy;//DerivativeOfGaussian.derivativeYX(ip, SIGMA);
-		ImageProcessor dydy = DerivativeOfGaussian.derivativeYY(ip, SIGMA);
-		
-		// calculate line points from eigenvalues and eigenvectors based on Hessian matrix
-		for(int py = 0; py < image_height; ++py)
-		{
-			for(int px = 0; px < image_width; ++px)
-			{
-				// construct Hessian matrix in Jama
-				Matrix m = null; // NOTE: beware of null-pointer exceptions!
-				m = new Matrix(2, 2, 0); // 2x2 RC matrix with zeros
-				m.set(0, 0, dxdx.getf(px, py));
-				m.set(0, 1, dxdy.getf(px, py));
-				m.set(1, 0, dydx.getf(px, py));
-				m.set(1, 1, dydy.getf(px, py));
-				//System.err.println("Cond="+h.cond());
-				
-				// compute eigenvalues and eigenvectors
-				EigenvalueDecomposition evd = m.eig();
-				Matrix d = evd.getD();
-				Matrix v = evd.getV();
-				
-				// determine largest absolute (perpendicular -> n(t)) and smallest absolute (parallel -> s(t)) eigenvalue and corresponding eigenvector
-				double first_eigenvalue = 0.0; // |n(t)|
-				double nx = 0.0; // n(t) -> perpendicular to s(t)
-				double ny = 0.0; // n(t) -> perpendicular to s(t)
-				double second_eigenvalue = 0.0;
-				double sx = 0.0;
-				double sy = 0.0;
-				if(d.get(0,0) <= d.get(1,1))
-				{
-					first_eigenvalue = d.get(0,0);
-					nx = v.get(0,0);
-					ny = v.get(1,0);
-					second_eigenvalue = d.get(1,1);
-					sx = v.get(0,1);
-					sy = v.get(1,1);
-				}
-				else
-				{
-					first_eigenvalue = d.get(1,1);
-					nx = v.get(0,1);
-					ny = v.get(1,1);
-					second_eigenvalue = d.get(0,0);
-					sx = v.get(0,0);
-					sy = v.get(1,0);
-				}
-				
-				// reorient  eigenvecors in same general direction
-				if(ny < 0)
-				{
-					nx = -nx;
-					ny = -ny;
-				}
-				
-				if(sy < 0)
-				{
-					sx = -sx;
-					sy = -sy;
-				}
-				
-				// calculate position of line point and filter line points
-				double t = (dx.getf(px,py)*nx + dy.getf(px,py)*ny) / (dxdx.getf(px,py)*nx*nx + dxdy.getf(px,py)*nx*ny + dydx.getf(px,py)*ny*nx + dydy.getf(px,py)*ny*ny);
-				double dlpx = t*nx;
-				double dlpy = t*ny;
-				
-				// store line point information
-				line_points[px][py][0] = first_eigenvalue;
-				line_points[px][py][1] = nx;
-				line_points[px][py][2] = ny;
-				line_points[px][py][3] = second_eigenvalue;
-				line_points[px][py][4] = sx;
-				line_points[px][py][5] = sy;
-				line_points[px][py][6] = dlpx;
-				line_points[px][py][7] = dlpy;
-			}
-		}
+		IJ.showStatus("Calculating Eigen decomposition of Hessian matrix");				
+		double[][][] line_points;
+		line_points = DerivativeOfGaussian.get_line_points(ip, SIGMA);
 		Profiling.toc("Calculating Eigen decomposition of Hessian matrix");
 		
 		// =====================================================================
