@@ -319,7 +319,7 @@ public class DerivativeOfGaussian
 				line_points[px][py][5] = second_eigenvector_y;
 				
 				// calculate position of peak in second order Taylor polynomial from Steger's algorithm
-				double t = -(dx.getf(px,py)*first_eigenvector_x + dy.getf(px,py)*first_eigenvector_y)/(dxdx.getf(px,py)*first_eigenvector_x*first_eigenvector_x + dxdy.getf(px,py)*dydx.getf(px,py)*first_eigenvector_x*first_eigenvector_y + dydy.getf(px,py)*first_eigenvector_y*first_eigenvector_y);
+				double t = (dx.getf(px,py)*first_eigenvector_x + dy.getf(px,py)*first_eigenvector_y)/(dxdx.getf(px,py)*first_eigenvector_x*first_eigenvector_x + 2.0*dxdy.getf(px,py)*first_eigenvector_x*first_eigenvector_y + dydy.getf(px,py)*first_eigenvector_y*first_eigenvector_y);
 				double dlpx = t*first_eigenvector_x;
 				double dlpy = t*first_eigenvector_y;
 				
@@ -332,6 +332,156 @@ public class DerivativeOfGaussian
 		
 		return line_points;
 	}
+	
+	/** the same as line point above, only in "Steger's" format 
+	    used for verification and debug */
+	public static double[][] get_line_points_stegers(ImageProcessor ip, double sigma, boolean mode)
+	{
+		int image_width = ip.getWidth();
+		int image_height = ip.getHeight();
+		int l;
+		double a;
+		double b;
+	
+		
+		//final line points
+		double[][] line_points = new double[7][image_width*image_height];
+		// store results of eigendecomposition
+		//	[0] = lambda1_magnitude		n(t)
+		//	[1] = lambda1_direction_x	n_x(t)
+		//	[2] = lambda1_direction_y	n_y(t)
+		//	[3] = derivative of image in y
+		//	[4] = derivative of image in x
+		//	[5] = super-resolved_x		t_y, or dlpy
+		//	[6] = super-resolved_y		t_x, or dlpx		
+
+
+		// calculate derivatives of gaussian from image
+		ImageProcessor dx = derivativeX(ip, sigma);
+		ImageProcessor dy = derivativeY(ip, sigma);
+		ImageProcessor dxdx = derivativeXX(ip, sigma);
+		ImageProcessor dxdy = derivativeXY(ip, sigma);
+		ImageProcessor dydy = derivativeYY(ip, sigma);
+
+		//calculate Eigen decomposition of Hessian matrix
+		for(int py = 0; py < image_height; ++py)
+		{
+			for(int px = 0; px < image_width; ++px)
+			{
+
+				l = LINCOOR(py,px,image_width);
+				
+				// determine first and second eigenvalue and eigenvector
+				double first_eigenvalue = 0.0; // |n(t)|
+				double first_eigenvector_x = 0.0; // n(t) -> perpendicular to s(t)
+				double first_eigenvector_y = 0.0; // n(t) -> perpendicular to s(t)							
+				double t;
+				
+				
+				//*
+				double dfdrc = dxdy.getf(px, py);
+				double dfdrr = dxdx.getf(px, py);
+				double dfdcc = dydy.getf(px, py);
+
+				double theta, e1,e2,n1,n2,c,s;
+				
+				 if (dfdrc != 0.0) 
+				 {
+					    theta = 0.5*(dfdcc-dfdrr)/dfdrc;
+					    t = 1.0/(Math.abs(theta)+Math.sqrt(theta*theta+1.0));
+					    if (theta < 0.0) t = -t;
+					    c = 1.0/Math.sqrt(t*t+1.0);
+					    s = t*c;
+					    e1 = dfdrr-t*dfdrc;
+					    e2 = dfdcc+t*dfdrc;
+					  
+				 } else 
+				 {
+					    c = 1.0;
+					    s = 0.0;
+					    e1 = dfdrr;
+					    e2 = dfdcc;
+					  
+				 }
+				 n1 = c;
+				 n2 = -s;
+				 //actually since hessian is a symmetric matrix
+				 //eigen vectors are perpendicular, so no need to store another vector
+				
+				 
+				  if (Math.abs(e1) > Math.abs(e2)) 
+				  {
+					  first_eigenvalue = e1;
+					    //eigval[1] = e2;
+					    first_eigenvector_x = n1;
+					    first_eigenvector_y = n2;
+					    //eigvec[1][0] = -n2;
+					    //eigvec[1][1] = n1;
+				  } 
+				  else if (Math.abs(e1) < Math.abs(e2))
+				  {
+						  first_eigenvalue = e2;
+					    //eigval[1] = e1;
+						  first_eigenvector_x = -n2;
+						  first_eigenvector_y = n1;
+					    //eigvec[1][0] = n1;
+					    //eigvec[1][1] = n2;
+				   } 
+				   else 
+				   {
+					    if (e1 < e2) 
+					    {
+					    	first_eigenvalue = e1;
+					      //eigval[1] = e2;
+					    	first_eigenvector_x = n1;
+					    	first_eigenvector_y = n2;
+					      //eigvec[1][0] = -n2;
+					      //eigvec[1][1] = n1;
+					    } else 
+					    {
+					    	first_eigenvalue = e2;
+					      //eigval[1] = e1;
+					    	first_eigenvector_x = -n2;
+					    	first_eigenvector_y = n1;
+					      //eigvec[1][0] = n1;
+					      //eigvec[1][1] = n2;
+					    }
+					}
+					//*/ 
+				
+				
+				
+				// store eigenvalues and eigenvector for new optimum
+				  if (mode)
+					  line_points[0][l] = first_eigenvalue*(-1);
+				  else
+					  line_points[0][l] = first_eigenvalue;
+				line_points[1][l] = first_eigenvector_y;
+				line_points[2][l] = first_eigenvector_x;				
+				line_points[3][l] = dy.getf(px,py);
+				line_points[4][l] = dx.getf(px,py);
+				
+				// calculate position of peak in second order Taylor polynomial from Steger's algorithm
+				b = (dx.getf(px,py)*first_eigenvector_x + dy.getf(px,py)*first_eigenvector_y);
+				a = (dxdx.getf(px,py)*first_eigenvector_x*first_eigenvector_x + 2.0*dxdy.getf(px,py)*first_eigenvector_x*first_eigenvector_y + dydy.getf(px,py)*first_eigenvector_y*first_eigenvector_y);
+				//a = (dxdx.getf(px,py)*first_eigenvector_x*first_eigenvector_x + dxdy.getf(px,py)*dxdy.getf(px,py)*first_eigenvector_x*first_eigenvector_y + dydy.getf(px,py)*first_eigenvector_y*first_eigenvector_y);
+				t = (+1)*b/a;
+				double dlpx = t*first_eigenvector_x;
+				double dlpy = t*first_eigenvector_y;
+				
+				// store line point
+				line_points[5][l] = dlpy+py;
+				line_points[6][l] = dlpx+px;								
+								
+			}
+		}
+		
+		
+		return line_points;
+	}
+	
+	
+	
 	
 	public static double[][][] frangi_measures(double[][][] line_points, int image_height, int image_width, double frangi_beta, double frangi_c)
 	{
@@ -748,7 +898,7 @@ public class DerivativeOfGaussian
 	
 	public static double gaussian2D_dx(double x, double y, double sigma_x, double sigma_y)
 	{
-		return ((-x)/(2*Math.pow(sigma_x, 3)*sigma_y))*Math.exp(-0.5*((x*x)/(sigma_x*sigma_x)+(y*y)/(sigma_y*sigma_y)));
+		return ((-x)/(2*Math.PI*Math.pow(sigma_x, 3)*sigma_y))*Math.exp(-0.5*((x*x)/(sigma_x*sigma_x)+(y*y)/(sigma_y*sigma_y)));
 	}
 	
 	public static double gaussian2D_dy(double x, double y)
@@ -982,5 +1132,9 @@ public class DerivativeOfGaussian
 			}
 		}
 		return ip;
+	}
+	public static int LINCOOR(int row, int col,int width)
+	{ 
+		return (row)*(width)+(col);				
 	}
 }
