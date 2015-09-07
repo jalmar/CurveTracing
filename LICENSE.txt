@@ -1,5 +1,6 @@
-KymoResliceWide plugin for ImageJ, generating kymographs
-Copyright (C) 2014  Eugene Katrukha
+CurveTracing plugin for ImageJ
+Copyright (C) 1996-1998 Carsten Steger
+Copyright (C) 2015 Jalmar Teeuw, Eugene Katrukha
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
